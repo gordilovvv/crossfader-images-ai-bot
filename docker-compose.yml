@@ -1,0 +1,14 @@
+services:
+  api:
+    image: serega-bot-images:${VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PORT}:${PORT}"
+    env_file: .env
+    command: ["node", "src/webhook.ts"]
+
+  worker:
+    image: serega-bot-images:${VERSION:-latest}
+    restart: unless-stopped
+    env_file: .env
+    command: ["node", "src/worker.ts"]
