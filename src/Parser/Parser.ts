@@ -1,36 +1,22 @@
-/*
-=== Финальный объект парсера под Avito (спека) ===
+import { readFileSync } from 'node:fs';
+import { Gemma } from '../AI/Gemma4.ts';
+import type { Browser } from './Browser.ts';
+import {
+    assembleCandidates,
+    dedupeSpecs,
+    Extract,
+    formatCandidates,
+    type ImageCandidate,
+    type JsonLdProduct,
+    parseJsonLdProduct,
+    type RawSnapshot,
+    snapshot,
+} from './Utils.ts';
 
-1) Ходит ли парсер в gemini за цветами, если не достал? — НЕТ.
-   - Цвета нужны только картинке №3 («Доступные цвета: black, white, rosewood»).
-     В Avito-фиде цветов нет вообще (проверено по реальному фиду и докам).
-   - В коде нет gemini с веб-доступом (grounding/googleSearch не подключён).
-     «Спросить у gemini доступные цвета» — отдельный AI-шаг, не работа парсера. файл COlorsSearch
-   - Парсер тупой и тестируемый: url -> факты со страницы. Не нашёл цвет -> [],
-     дозаполнит enrichment-шаг. (Но парсер использует snapshot и gemma чтобы доатсть все, не по классам или еще чему то сайты разные поставщиков)
-
-2) Хватает ли данных в фиде?
-   - Базовый минимум да: Id, Title, Description, Images, Address, Category,
-     GoodsType, AdType, Condition, Price + Brand, InstrumentType, Model, TargetAudience.
-   - Категорийные поля под гитары/пианино/комбики берём из Avito API:
-     GET /autoload/v1/user-docs/node/{slug}/fields (описан в docs/avito/autoload.md).
-
-3) Принцип: ПАРСЕР НЕ ЗНАЕТ таксономию Avito.
-   Он заполняет только сырьё со страницы. Классификацию (avito) и colors дописывает
-   отдельный AI-шаг (enricher). Разделение зашито в типы, чтобы полузаполненный
-   продукт не пролез в XML-генератор.
-
-Секции 1:1 ложатся на требования картинок из FigJam:
-   identity -> заголовки/бренд, specs -> характеристики, dimensions -> карт. габаритов,
-   contents -> комплектация, colors -> карт. цветов.
-
- где живёт классификация GoodsType/InstrumentType вот тут src/XMLFeedAvito/CategoryLookup.ts (но ээти все штуки будут вызывать уже перед сбором xml)
-*/
-
-// Что отдаёт ПАРСЕР (url -> факты, без Avito, без цветов): @TODO interface
+// Что отдаёт парсер: url -> факты со страницы (без Avito-классификации и цветов — их дописывает enricher-шаг).
 export type ParsedProduct = {
     source: { url: string };
-    identity: { title: string; brand: string; model: string; vendor: string; country: string };
+    identity: { title: string; brand: string; model: string; country: string };
     specs: Array<{ label: string; value: string }>;
     dimensions: { w: number; h: number; d: number; unit: string; weightKg: number };
     contents: string[];
@@ -38,15 +24,88 @@ export type ParsedProduct = {
     description: { html: string };
 };
 
-// Что отдаёт ENRICHER (AI-шаг после парсера) — только его принимает XML-генератор: @TODO interface
-export type ProductData = ParsedProduct & {
-    avito: {
-        category: string;
-        goodsType: string;
-        instrumentType: string;
-        condition: string;
-        adType: string;
-        price: number;
-    };
-    colors: string[];
-};
+// url -> факты со страницы. Снапшот (Browser) + семантика (Gemma). Картинки Gemma выбирает по индексу, код резолвит URL.
+export class Parser {
+    private static readonly PROMPT = readFileSync(
+        new URL('./promts/extract.md', import.meta.url),
+        'utf8',
+    );
+
+    private readonly browser: Browser;
+    private readonly gemma: Gemma;
+
+    constructor(browser: Browser, gemma: Gemma = new Gemma()) {
+        this.browser = browser;
+        this.gemma = gemma;
+    }
+
+    async parseUrl(url: string): Promise<ParsedProduct> {
+        const start = process.hrtime.bigint();
+        const snap = await this.browser.withPage(async (page) => {
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+            return snapshot(page);
+        });
+
+        const product = parseJsonLdProduct(snap.jsonLd);
+        const candidates = assembleCandidates(product.images, snap.ogImage, snap.domImages);
+        const extract = await this.gemma.askJson(
+            Parser.buildPrompt(snap, product, candidates),
+            Extract,
+        );
+
+        const images: string[] = [];
+        for (const i of new Set(extract.imageIndexes)) {
+            const picked = candidates[i]?.url;
+            if (picked) {
+                images.push(picked);
+            }
+        }
+
+        const specs = dedupeSpecs(extract.specs);
+        const description = Parser.bestDescription(snap, product);
+
+        const ms = Number(process.hrtime.bigint() - start) / 1e6;
+        console.log(
+            `[Parser] parseUrl ${images.length}img ${specs.length}specs ${candidates.length}cand ${Math.floor(ms / 1000)}s ${Math.round(ms % 1000)}ms`,
+        );
+        return {
+            source: { url },
+            identity: extract.identity,
+            specs,
+            dimensions: extract.dimensions,
+            contents: extract.contents,
+            images: { source: images.slice(0, 10) },
+            description: { html: description },
+        };
+    }
+
+    // Описание берём детерминированно (не через Gemma — она копирует его в выход и тормозит). On-page блок > JSON-LD > meta.
+    private static bestDescription(snap: RawSnapshot, product: JsonLdProduct): string {
+        return (
+            [snap.descriptionBlock, product.description, snap.metaDescription]
+                .map((s) => s.trim())
+                .sort((a, b) => b.length - a.length)[0] ?? ''
+        );
+    }
+
+    private static buildPrompt(
+        snap: RawSnapshot,
+        product: JsonLdProduct,
+        candidates: ImageCandidate[],
+    ): string {
+        const table = snap.specsTable.map((s) => `${s.label}: ${s.value}`).join('\n');
+        return `${Parser.PROMPT}
+TITLE: ${snap.title}
+OG_TITLE: ${snap.ogTitle}
+JSON_LD_PRODUCT: name="${product.name}" brand="${product.brand}"
+
+ТАБЛИЦА ХАРАКТЕРИСТИК (приоритет для specs):
+${table}
+
+ТЕКСТ СТРАНИЦЫ (fallback):
+${snap.text}
+
+КАНДИДАТЫ-КАРТИНКИ (index alt url):
+${formatCandidates(candidates)}`;
+    }
+}
