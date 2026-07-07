@@ -1,0 +1,217 @@
+{
+    "_meta": {
+        "purpose": "Эталонные пары вход→выход для CategoryLookup: по товару поставщика вернуть категорию Avito.",
+        "source": "expected.* взяты из реального боевого фида (avito-feed.xml, 1409 объявлений) — источник истины по таксономии.",
+        "notes": [
+            "В фиде GoodsType=Ударные и GoodsType=Аксессуары идут без подтипа.",
+            "Гитары различаются через GuitarType; клавишные через InstrumentType; студийное через EquipmentType.",
+            "Радиосистемы Avito относит к Аудио и видео / Микрофоны, а не к муз. инструментам.",
+            "supplierCategoryPath — сегменты URL поставщика (то, что реально приходит на вход).",
+            "confident=false там, где категория Avito неочевидна из URL поставщика — целевые кейсы для проверки логики."
+        ]
+    },
+    "samples": [
+        {
+            "name": "Kawai CA701 B",
+            "avitoUrl": null,
+            "supplierUrl": "https://ymusic.kz/klavishnye-instrumenty/cifrovye-pianino-i-royali/interernye-cifrovye-pianino/ca-701-b/",
+            "inStock": true,
+            "supplierCategoryPath": [
+                "klavishnye-instrumenty",
+                "cifrovye-pianino-i-royali",
+                "interernye-cifrovye-pianino"
+            ],
+            "expected": {
+                "Category": "Музыкальные инструменты",
+                "GoodsType": "Клавишные и синтезаторы",
+                "attrs": { "Brand": "Kawai", "InstrumentType": "Цифровое пианино" }
+            },
+            "confident": true,
+            "note": "Интерьерное цифровое пианино — прямое совпадение с InstrumentType=Цифровое пианино."
+        },
+        {
+            "name": "Sennheiser XSW 1-CI1-B(A)",
+            "avitoUrl": "https://www.avito.ru/astana/audio_i_video/sennheiser_xsw_1-ci1-ba_7354396001",
+            "supplierUrl": "https://ymusic.kz/mikrofony-i-radiosistemy/radiosistemy/besprovodnye-instrumentalnye-sistemy/xsw-1-ci1/",
+            "inStock": true,
+            "supplierCategoryPath": [
+                "mikrofony-i-radiosistemy",
+                "radiosistemy",
+                "besprovodnye-instrumentalnye-sistemy"
+            ],
+            "expected": {
+                "Category": "Аудио и видео",
+                "GoodsType": "Микрофоны",
+                "attrs": {}
+            },
+            "confident": false,
+            "note": "Инструментальная радиосистема. Avito кладёт радиосистемы в Аудио и видео / Микрофоны, НЕ в муз. инструменты (ср. Shure BLX в боевом фиде). Avito-URL подтверждает раздел audio_i_video."
+        },
+        {
+            "name": "Yamaha CLP-835",
+            "avitoUrl": "https://www.avito.ru/astana/muzykalnye_instrumenty/yamaha_clp-835_7322314198",
+            "supplierUrl": "https://ymusic.kz/klavishnye-instrumenty/cifrovye-pianino-i-royali/interernye-cifrovye-pianino/clp-835b/",
+            "inStock": true,
+            "supplierCategoryPath": [
+                "klavishnye-instrumenty",
+                "cifrovye-pianino-i-royali",
+                "interernye-cifrovye-pianino"
+            ],
+            "expected": {
+                "Category": "Музыкальные инструменты",
+                "GoodsType": "Клавишные и синтезаторы",
+                "attrs": { "Brand": "Yamaha", "InstrumentType": "Цифровое пианино" }
+            },
+            "confident": true,
+            "note": "Clavinova, интерьерное цифровое пианино."
+        },
+        {
+            "name": "Yamaha L-200",
+            "avitoUrl": "https://www.avito.ru/astana/muzykalnye_instrumenty/yamaha_l-200_7578151956",
+            "supplierUrl": "https://ymusic.kz/klavishnye-instrumenty/aksessuary-i-komplektuyuschie/stoyki/l-200b-stoyka-razrabotannaya-specialno-dlya-p-225b-cvet-chernyy-yamaha/",
+            "inStock": true,
+            "supplierCategoryPath": [
+                "klavishnye-instrumenty",
+                "aksessuary-i-komplektuyuschie",
+                "stoyki"
+            ],
+            "expected": {
+                "Category": "Музыкальные инструменты",
+                "GoodsType": "Аксессуары",
+                "attrs": { "Brand": "Yamaha" }
+            },
+            "confident": false,
+            "note": "Стойка для цифрового пианино P-225. По URL лежит под klavishnye-instrumenty, но это аксессуар — GoodsType=Аксессуары (в фиде без подтипа). Ловушка: не спутать с Клавишные."
+        },
+        {
+            "name": "Yamaha A3R",
+            "avitoUrl": "https://www.avito.ru/astana/muzykalnye_instrumenty/yamaha_a3r_7642699019",
+            "supplierUrl": "https://ymusic.kz/gitary-i-oborudovanie/akusticheskie/6-strunnye/a3r-tbs-are/",
+            "inStock": true,
+            "supplierCategoryPath": ["gitary-i-oborudovanie", "akusticheskie", "6-strunnye"],
+            "expected": {
+                "Category": "Музыкальные инструменты",
+                "GoodsType": "Гитары и другие струнные",
+                "attrs": { "Brand": "Yamaha", "GuitarType": "Электроакустическая" }
+            },
+            "confident": false,
+            "note": "Поставщик относит к 'акустические', но A3R — электроакустическая (звукосниматель SRT2, ARE). Правильный GuitarType=Электроакустическая. Кейс на несовпадение подкатегории поставщика и Avito."
+        },
+        {
+            "name": "Yamaha P-145 SET",
+            "avitoUrl": "https://www.avito.ru/astana/muzykalnye_instrumenty/yamaha_p-145_set_7610950802",
+            "supplierUrl": "https://ymusic.kz/klavishnye-instrumenty/cifrovye-pianino-i-royali/portativnye-cifrovye-pianino/p-145-komplekt/",
+            "inStock": true,
+            "supplierCategoryPath": [
+                "klavishnye-instrumenty",
+                "cifrovye-pianino-i-royali",
+                "portativnye-cifrovye-pianino"
+            ],
+            "expected": {
+                "Category": "Музыкальные инструменты",
+                "GoodsType": "Клавишные и синтезаторы",
+                "attrs": { "Brand": "Yamaha", "InstrumentType": "Цифровое пианино" }
+            },
+            "confident": true,
+            "note": "Портативное цифровое пианино (комплект со стойкой). InstrumentType всё равно Цифровое пианино."
+        },
+        {
+            "name": "Sabian SBR5002 2-pack",
+            "avitoUrl": "https://www.avito.ru/astana/muzykalnye_instrumenty/sabian_sbr5002_2-pack_7578827088",
+            "supplierUrl": "https://ymusic.kz/udarnye-instrumenty/tarelki/nabory-tarelok/sbr5002/",
+            "inStock": true,
+            "supplierCategoryPath": ["udarnye-instrumenty", "tarelki", "nabory-tarelok"],
+            "expected": {
+                "Category": "Музыкальные инструменты",
+                "GoodsType": "Ударные",
+                "attrs": { "Brand": "Sabian" }
+            },
+            "confident": true,
+            "note": "Набор тарелок. В боевом фиде GoodsType=Ударные идёт без подтипа (тарелки/тип не выделяются)."
+        },
+        {
+            "name": "Yamaha MG12XU",
+            "avitoUrl": "https://www.avito.ru/astana/muzykalnye_instrumenty/yamaha_mg12xu_7706895234",
+            "supplierUrl": "https://ymusic.kz/zvukovoe-oborudovanie/mikshernye-pulty/analogovye/mg12xu/",
+            "inStock": true,
+            "supplierCategoryPath": ["zvukovoe-oborudovanie", "mikshernye-pulty", "analogovye"],
+            "expected": {
+                "Category": "Музыкальные инструменты",
+                "GoodsType": "Для студии и концертов",
+                "attrs": { "Brand": "Yamaha", "EquipmentType": "Микшерный пульт" }
+            },
+            "confident": true,
+            "note": "Аналоговый микшерный пульт → GoodsType=Для студии и концертов, EquipmentType=Микшерный пульт."
+        },
+        {
+            "name": "Yamaha C40",
+            "avitoUrl": "https://www.avito.ru/astana/muzykalnye_instrumenty/yamaha_c40_7578633425",
+            "supplierUrl": "https://ymusic.kz/gitary-i-oborudovanie/klassicheskie/klassicheskie/c40-cvet-bl-black/",
+            "inStock": true,
+            "supplierCategoryPath": ["gitary-i-oborudovanie", "klassicheskie", "klassicheskie"],
+            "expected": {
+                "Category": "Музыкальные инструменты",
+                "GoodsType": "Гитары и другие струнные",
+                "attrs": { "Brand": "Yamaha", "GuitarType": "Классическая" }
+            },
+            "confident": true,
+            "note": "Классическая гитара. GuitarType=Классическая."
+        },
+        {
+            "name": "Yamaha Pacifica 012",
+            "avitoUrl": "https://www.avito.ru/astana/muzykalnye_instrumenty/yamaha_pacifica012_7578942667",
+            "supplierUrl": "https://ymusic.kz/gitary-i-oborudovanie/elektrogitary/6-strunnye/pacifica012/",
+            "inStock": true,
+            "supplierCategoryPath": ["gitary-i-oborudovanie", "elektrogitary", "6-strunnye"],
+            "expected": {
+                "Category": "Музыкальные инструменты",
+                "GoodsType": "Гитары и другие струнные",
+                "attrs": { "Brand": "Yamaha", "GuitarType": "Электрогитара" }
+            },
+            "confident": true,
+            "note": "Электрогитара. GuitarType=Электрогитара."
+        },
+        {
+            "name": "Medeli AP33",
+            "avitoUrl": "https://www.avito.ru/astana/muzykalnye_instrumenty/medeli_ap33_7674649586",
+            "supplierUrl": "https://samatshow.kz/kombousilitel-dlya-elektronnoy-udarnoy-ustanovki-medeli-ap33/",
+            "inStock": true,
+            "supplierCategoryPath": [],
+            "expected": {
+                "Category": "Музыкальные инструменты",
+                "GoodsType": "Для студии и концертов",
+                "attrs": { "Brand": "Medeli", "EquipmentType": "Комбоусилитель" }
+            },
+            "confident": false,
+            "note": "Комбоусилитель/монитор для электронной ударной установки. У поставщика (samatshow) плоский URL без категории — категорию надо выводить из названия. EquipmentType=Комбоусилитель."
+        },
+        {
+            "name": "Radial Pro48",
+            "avitoUrl": "https://www.avito.ru/astana/muzykalnye_instrumenty/radial_pro48_7610735760",
+            "supplierUrl": "https://samatshow.kz/radial-pro48-aktivnyy-direkt-boks/",
+            "inStock": true,
+            "supplierCategoryPath": [],
+            "expected": {
+                "Category": "Музыкальные инструменты",
+                "GoodsType": "Для студии и концертов",
+                "attrs": { "Brand": "Radial", "EquipmentType": "Ди-бокс" }
+            },
+            "confident": false,
+            "note": "Активный директ-бокс (DI). В фиде EquipmentType называется 'Ди-бокс'. Плоский URL поставщика — категорию берём из названия."
+        },
+        {
+            "name": "Yamaha MG10XUF",
+            "avitoUrl": "https://www.avito.ru/astana/muzykalnye_instrumenty/yamaha_mg10xuf_7706359174",
+            "supplierUrl": "https://ymusic.kz/zvukovoe-oborudovanie/mikshernye-pulty/analogovye/mg10xuf/",
+            "inStock": true,
+            "supplierCategoryPath": ["zvukovoe-oborudovanie", "mikshernye-pulty", "analogovye"],
+            "expected": {
+                "Category": "Музыкальные инструменты",
+                "GoodsType": "Для студии и концертов",
+                "attrs": { "Brand": "Yamaha", "EquipmentType": "Микшерный пульт" }
+            },
+            "confident": true,
+            "note": "Аналоговый микшерный пульт, как MG12XU."
+        }
+    ]
+}
