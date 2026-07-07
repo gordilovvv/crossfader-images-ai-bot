@@ -4,6 +4,11 @@
 
 <!-- формат: - <url> — что там и что проверять -->
 
+## Парсинг (Parser.parseUrl)
+
+- `https://ymusic.kz/klavishnye-instrumenty/cifrovye-pianino-i-royali/interernye-cifrovye-pianino/ca-701-b/` — цифровое пианино KAWAI CA701 B. Бренд KAWAI, 88 клавиш, фото товара (png). Проверять: brand=KAWAI, есть specs, есть images.
+- `https://stepline.kz/products/nastennaya_akustika_audac_vexo108_b/` — настенная акустика AUDAC VEXO108 B (другой поставщик, другая вёрстка). Проверять: brand=AUDAC, есть images. Кросс-сайтовость.
+
 ## Эталонные картинки (tests/refs/*.jpeg)
 
 Одобренные референсы для генерации, порядок = порядок генерации карточек для объявления (пример: KAWAI CA 701). Полное ТЗ — из FigJam-доски.

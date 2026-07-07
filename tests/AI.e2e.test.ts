@@ -4,23 +4,11 @@ import { test } from 'node:test';
 import type { GenerateContentResponse } from '@google/genai';
 import { z } from 'zod';
 import { Classification } from '../src/AI/Classification.ts';
+import { ColorsSearch } from '../src/AI/ColorsSearch.ts';
 import { Gemma } from '../src/AI/Gemma4.ts';
 import { NanoBanano } from '../src/AI/NanoBanano.ts';
 import { extractImage, extractText, parseFirstJson } from '../src/AI/Utils.ts';
-import { measure, saveArtifact } from './helpers/e2e.ts';
-
-const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
-const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
-
-function imageExt(buf: Buffer): 'png' | 'jpg' | null {
-    if (buf.subarray(0, 4).equals(PNG_MAGIC)) {
-        return 'png';
-    }
-    if (buf.subarray(0, 3).equals(JPEG_MAGIC)) {
-        return 'jpg';
-    }
-    return null;
-}
+import { imageExt, measure, saveArtifact } from './helpers/e2e.ts';
 
 test('e2e: Classification — крупный товар → big [paid]', async () => {
     const clf = new Classification();
@@ -56,7 +44,7 @@ const Product = z.object({
 });
 
 test('e2e: Gemma.askJson — сырой дамп страницы → валидный объект товара [paid]', async () => {
-    const raw = readFileSync(new URL('./output/parser-ca701.json', import.meta.url), 'utf8').slice(
+    const raw = readFileSync(new URL('./fixtures/raw-ca701.json', import.meta.url), 'utf8').slice(
         0,
         12000,
     );
@@ -71,6 +59,32 @@ test('e2e: Gemma.askJson — сырой дамп страницы → валид
         result.characteristics.length > 0 && result.characteristics.length <= 8,
         'характеристики вне [1..8]',
     );
+});
+
+test('e2e: ColorsSearch — цвета KAWAI CA 701 через Google-поиск [paid]', async () => {
+    const { result } = await measure('colors ca701', () =>
+        new ColorsSearch().search('KAWAI CA 701 цифровое пианино'),
+    );
+    const lower = result.map((c) => c.toLowerCase());
+    for (const expected of ['black', 'white', 'rosewood']) {
+        assert.ok(lower.includes(expected), `нет цвета ${expected}: [${result.join(', ')}]`);
+    }
+    assert.equal(new Set(lower).size, lower.length, 'дубли цветов');
+});
+
+test('e2e: ColorsSearch — несуществующая модель реального бренда → [], не выдумка [paid]', async () => {
+    const { result } = await measure('colors фейк-модель', () =>
+        new ColorsSearch().search('KAWAI CA 99999 цифровое пианино'),
+    );
+    assert.deepEqual(
+        result,
+        [],
+        `перенёс цвета линейки на несуществующую модель: [${result.join(', ')}]`,
+    );
+});
+
+test('e2e: ColorsSearch — пустой ввод → [] без вызова модели', async () => {
+    assert.deepEqual(await new ColorsSearch().search('   '), []);
 });
 
 test('e2e: parseFirstJson — берёт первый объект, игнорит мусор после', () => {
