@@ -2,6 +2,19 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
+
+export function imageExt(buf: Buffer): 'png' | 'jpg' | null {
+    if (buf.subarray(0, 4).equals(PNG_MAGIC)) {
+        return 'png';
+    }
+    if (buf.subarray(0, 3).equals(JPEG_MAGIC)) {
+        return 'jpg';
+    }
+    return null;
+}
+
 type Measured<T> = { result: T; ms: number };
 
 export async function measure<T>(label: string, fn: () => T | Promise<T>): Promise<Measured<T>> {

@@ -7,20 +7,7 @@ import { Classification } from '../src/AI/Classification.ts';
 import { Gemma } from '../src/AI/Gemma4.ts';
 import { NanoBanano } from '../src/AI/NanoBanano.ts';
 import { extractImage, extractText, parseFirstJson } from '../src/AI/Utils.ts';
-import { measure, saveArtifact } from './helpers/e2e.ts';
-
-const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
-const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
-
-function imageExt(buf: Buffer): 'png' | 'jpg' | null {
-    if (buf.subarray(0, 4).equals(PNG_MAGIC)) {
-        return 'png';
-    }
-    if (buf.subarray(0, 3).equals(JPEG_MAGIC)) {
-        return 'jpg';
-    }
-    return null;
-}
+import { imageExt, measure, saveArtifact } from './helpers/e2e.ts';
 
 test('e2e: Classification — крупный товар → big [paid]', async () => {
     const clf = new Classification();
