@@ -1,17 +1,21 @@
 import { readFileSync } from 'node:fs';
+import type { Page } from 'playwright';
 import { Gemma } from '../AI/Gemma4.ts';
 import type { Browser } from './Browser.ts';
+import { ImagePicker } from './ImagePicker.ts';
 import {
     assembleCandidates,
     dedupeSpecs,
     Extract,
-    formatCandidates,
-    type ImageCandidate,
     type JsonLdProduct,
     parseJsonLdProduct,
+    type RawImage,
     type RawSnapshot,
     snapshot,
 } from './Utils.ts';
+
+// document живёт в контексте браузера (page.evaluate); в tsconfig нет DOM-lib.
+declare const document: any;
 
 // Что отдаёт парсер: url -> факты со страницы (без Avito-классификации и цветов — их дописывает enricher-шаг).
 export type ParsedProduct = {
@@ -33,33 +37,40 @@ export class Parser {
 
     private readonly browser: Browser;
     private readonly gemma: Gemma;
+    private readonly picker: ImagePicker;
 
     constructor(browser: Browser, gemma: Gemma = new Gemma()) {
         this.browser = browser;
         this.gemma = gemma;
+        this.picker = new ImagePicker(browser, gemma);
     }
 
     async parseUrl(url: string): Promise<ParsedProduct> {
         const start = process.hrtime.bigint();
+        const loaded: string[] = [];
         const snap = await this.browser.withPage(async (page) => {
+            page.on('response', (resp) => {
+                if ((resp.headers()['content-type'] ?? '').startsWith('image/')) {
+                    loaded.push(resp.url());
+                }
+            });
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-            return snapshot(page);
+            const s = await snapshot(page);
+            await Parser.revealGallery(page).catch(() => {});
+            return s;
         });
 
         const product = parseJsonLdProduct(snap.jsonLd);
-        const candidates = assembleCandidates(product.images, snap.ogImage, snap.domImages);
-        const extract = await this.gemma.askJson(
-            Parser.buildPrompt(snap, product, candidates),
-            Extract,
-        );
-
-        const images: string[] = [];
-        for (const i of new Set(extract.imageIndexes)) {
-            const picked = candidates[i]?.url;
-            if (picked) {
-                images.push(picked);
-            }
-        }
+        // Реально загруженные браузером картинки (network) — надёжнее скрапа атрибутов и часто это полноразмер главного фото.
+        const netImages: RawImage[] = loaded.map((u) => ({ url: u, alt: '', hint: 5000 }));
+        const candidates = assembleCandidates(product.images, snap.ogImage, [
+            ...snap.domImages,
+            ...netImages,
+        ]);
+        const [extract, images] = await Promise.all([
+            this.gemma.askJson(Parser.buildPrompt(snap, product), Extract),
+            this.picker.pick(candidates),
+        ]);
 
         const specs = dedupeSpecs(extract.specs);
         const description = Parser.bestDescription(snap, product);
@@ -88,11 +99,7 @@ export class Parser {
         );
     }
 
-    private static buildPrompt(
-        snap: RawSnapshot,
-        product: JsonLdProduct,
-        candidates: ImageCandidate[],
-    ): string {
+    private static buildPrompt(snap: RawSnapshot, product: JsonLdProduct): string {
         const table = snap.specsTable.map((s) => `${s.label}: ${s.value}`).join('\n');
         return `${Parser.PROMPT}
 TITLE: ${snap.title}
@@ -103,9 +110,25 @@ JSON_LD_PRODUCT: name="${product.name}" brand="${product.brand}"
 ${table}
 
 ТЕКСТ СТРАНИЦЫ (fallback):
-${snap.text}
+${snap.text}`;
+    }
 
-КАНДИДАТЫ-КАРТИНКИ (index alt url):
-${formatCandidates(candidates)}`;
+    // Best-effort: кликнуть по крупнейшему фото — сайты часто грузят полноразмер в лайтбокс по клику (ловим из network).
+    private static async revealGallery(page: Page): Promise<void> {
+        await page.evaluate(() => {
+            let best: any = null;
+            let area = 0;
+            for (const img of document.querySelectorAll('img')) {
+                const r = img.getBoundingClientRect();
+                if (r.width * r.height > area) {
+                    area = r.width * r.height;
+                    best = img;
+                }
+            }
+            if (best) {
+                (best.closest('a') ?? best).click();
+            }
+        });
+        await page.waitForTimeout(1500);
     }
 }

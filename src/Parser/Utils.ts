@@ -21,7 +21,7 @@ export type RawSnapshot = {
 
 export type ImageCandidate = { index: number; url: string; alt: string };
 
-// Что достаёт Gemma: семантика + ВЫБОР картинок по индексу. Описание НЕ генерит — берём детерминированно (экономит выход).
+// Что достаёт Gemma: семантика (факты). Картинки выбирает ImagePicker по пикселям, описание берём детерминированно.
 // Без responseSchema модель иногда опускает soft-поля → .default() терпит пропуск (парсер толерантен к сырью).
 export const Extract = z.object({
     identity: z
@@ -46,7 +46,6 @@ export const Extract = z.object({
         })
         .prefault({}),
     contents: z.array(z.string()).max(30).default([]),
-    imageIndexes: z.array(z.number()).max(10).default([]),
 });
 export type Extract = z.infer<typeof Extract>;
 
@@ -306,7 +305,7 @@ function readImages(image: unknown): string[] {
 }
 
 // Одно фото в разных размерах = один файл в разных size-папках. Ключ дедупа — имя файла, не полный путь.
-function fileKey(url: string): string {
+export function fileKey(url: string): string {
     const path = (url.split('?')[0] ?? url).split('#')[0] ?? url;
     return path.split('/').pop() ?? url;
 }
@@ -337,10 +336,6 @@ export function assembleCandidates(
         .sort((a, b) => b.hint - a.hint)
         .slice(0, MAX_CANDIDATES)
         .map((img, index) => ({ index, url: img.url, alt: img.alt }));
-}
-
-export function formatCandidates(images: ImageCandidate[]): string {
-    return images.map((im) => `[${im.index}] alt="${im.alt}" ${im.url}`).join('\n');
 }
 
 export function dedupeSpecs(

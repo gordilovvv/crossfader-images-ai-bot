@@ -7,10 +7,18 @@ export class Gemma {
     private static readonly MODEL = 'gemma-4-26b-a4b-it';
     private static readonly FALLBACK = 'gemma-4-31b-it';
 
+    private readonly model: string;
+    private readonly fallback: string;
+
+    constructor(model: string = Gemma.MODEL, fallback: string = Gemma.FALLBACK) {
+        this.model = model;
+        this.fallback = fallback;
+    }
+
     async ask(prompt: string, images: RefImage[] = []): Promise<string> {
         const start = process.hrtime.bigint();
         const resp = await genai.models.generateContent({
-            model: Gemma.MODEL,
+            model: this.model,
             contents: buildParts(prompt, images),
         });
         const text = extractText(resp);
@@ -37,7 +45,7 @@ export class Gemma {
             });
 
         const start = process.hrtime.bigint();
-        const firstResp = await call(Gemma.MODEL);
+        const firstResp = await call(this.model);
         Gemma.assertNotTruncated(firstResp);
         let reason: string;
         try {
@@ -52,7 +60,7 @@ export class Gemma {
         }
 
         const retryResp = await call(
-            Gemma.FALLBACK,
+            this.fallback,
             `\nПредыдущий ответ ${reason}. Верни только валидный JSON без markdown.`,
         );
         Gemma.assertNotTruncated(retryResp);

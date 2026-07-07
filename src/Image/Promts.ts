@@ -1,16 +1,16 @@
 import { readFileSync } from 'node:fs';
 
-const DIR = new URL('./promts/', import.meta.url);
+const DIR = new URL('./prompts/', import.meta.url);
 
 export type CardPrompt = { slot: number; name: string; prompt: string };
 
+// 5 фонов под слоты 1..5. Слот 6 общий — статичный PNG-ассет, моделью не генерится.
 const FILES = [
     '01-hero-yellow.md',
     '02-interior-specs.md',
     '03-interior-lifestyle.md',
-    '04-dimensions-yellow.md',
+    '04-dimensions.md',
     '05-closeup-detail.md',
-    '06-brand-general.md',
 ] as const;
 
 export function loadCardPrompts(): CardPrompt[] {
