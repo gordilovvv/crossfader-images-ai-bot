@@ -1,108 +1,158 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { env } from '../src/environment.ts';
-import { TelegramBot } from '../src/TelegramGateway/Bot.ts';
-import { extractLinks, parseGenCommand } from '../src/TelegramGateway/Utils.ts';
-import { assertBudget, measure } from './helpers/e2e.ts';
+import { Commands } from '../src/TelegramGateway/Commands.ts';
 
 const BOT = 'serega_bot';
-const GROUP_ID = Number(env.TELEGRAM_GROUP_ID);
-const noopProcess = async (links: string[]): Promise<string[]> => links;
 
-test('e2e: TelegramGateway Utils — gen с одной ссылкой', async () => {
-    const text = `@${BOT} gen https://www.avito.ru/item/123`;
-
-    const { result: cmd, ms } = await measure('parseGenCommand одна ссылка', () =>
-        parseGenCommand(text, BOT),
-    );
-
-    assert.ok(cmd, 'команда не распознана');
-    assert.deepEqual(cmd.links, ['https://www.avito.ru/item/123']);
-    assertBudget(ms, 50, 'parseGenCommand');
-});
-
-test('e2e: TelegramGateway Utils — gen с массивом ссылок', () => {
-    const text = `@${BOT} gen https://avito.ru/a https://avito.ru/b\nhttps://avito.ru/c`;
-
-    const cmd = parseGenCommand(text, BOT);
-
-    assert.ok(cmd);
-    assert.deepEqual(cmd.links, ['https://avito.ru/a', 'https://avito.ru/b', 'https://avito.ru/c']);
-});
-
-test('e2e: TelegramGateway Utils — упоминание в середине сообщения', () => {
-    const text = `Ребят, @${BOT} gen https://avito.ru/x пожалуйста`;
-
-    const cmd = parseGenCommand(text, BOT);
-
-    assert.ok(cmd);
-    assert.deepEqual(cmd.links, ['https://avito.ru/x']);
-});
-
-test('e2e: TelegramGateway Utils — регистр упоминания и gen не важен', () => {
-    const text = `@${BOT.toUpperCase()} GEN https://avito.ru/y`;
-
-    const cmd = parseGenCommand(text, BOT);
-
-    assert.ok(cmd);
-    assert.deepEqual(cmd.links, ['https://avito.ru/y']);
-});
-
-test('e2e: TelegramGateway Utils — обычное сообщение без команды => null', () => {
-    assert.equal(parseGenCommand('просто болтаем про https://avito.ru/z', BOT), null);
-    assert.equal(parseGenCommand(`@${BOT} привет`, BOT), null);
-    assert.equal(parseGenCommand(`@other_bot gen https://avito.ru/z`, BOT), null);
-});
-
-test('e2e: TelegramGateway Utils — gen без ссылок => { links: [] } (негативная ветка)', () => {
-    const cmd = parseGenCommand(`@${BOT} gen`, BOT);
-
-    assert.deepEqual(cmd, { links: [] });
-});
-
-test('e2e: TelegramGateway Utils — extractLinks срезает хвостовую пунктуацию', () => {
-    assert.deepEqual(extractLinks('смотри https://avito.ru/1, и https://avito.ru/2.'), [
-        'https://avito.ru/1',
-        'https://avito.ru/2',
-    ]);
-    assert.deepEqual(extractLinks('текст без ссылок'), []);
-});
-
-// --- Ниже — сценарии с живым Telegram (bot.api). Токен и группа берутся из .env. ---
-
-test('e2e: TelegramGateway Bot — ручка sendMessage доставляет сообщение в реальный чат', async () => {
-    const bot = new TelegramBot({
-        token: env.TELEGRAM_BOT_TOKEN,
-        groupId: GROUP_ID,
-        processLinks: noopProcess,
+test('e2e: TelegramGateway Commands — gen с одной ссылкой', () => {
+    assert.deepEqual(Commands.parse(`@${BOT} gen https://supplier.kz/item/123`, BOT), {
+        kind: 'gen',
+        links: [{ url: 'https://supplier.kz/item/123', avitoId: null, price: null }],
+        orphans: [],
     });
-
-    const { ms } = await measure('bot.sendMessage', () =>
-        bot.sendMessage(GROUP_ID, 'e2e: TelegramGateway.sendMessage'),
-    );
-
-    console.log(`[e2e] sendMessage доставлен за ${Math.round(ms)}ms`);
 });
 
-test('e2e: TelegramGateway Bot — broadcast рассылает результаты подписчикам, unsubscribe отписывает', async () => {
-    const bot = new TelegramBot({
-        token: env.TELEGRAM_BOT_TOKEN,
-        groupId: GROUP_ID,
-        processLinks: noopProcess,
+test('e2e: TelegramGateway Commands — ссылка avito после ссылки поставщика => avitoId', () => {
+    const text = `@${BOT} gen https://supplier.kz/a https://www.avito.ru/astana/muzykalnye_instrumenty/yamaha_hs3_7450027995?utm_source=share&context=abc123 https://supplier.kz/b\nhttps://supplier.kz/c https://m.avito.ru/x/y_4634904544/#photo`;
+
+    assert.deepEqual(Commands.parse(text, BOT), {
+        kind: 'gen',
+        links: [
+            { url: 'https://supplier.kz/a', avitoId: '7450027995', price: null },
+            { url: 'https://supplier.kz/b', avitoId: null, price: null },
+            { url: 'https://supplier.kz/c', avitoId: '4634904544', price: null },
+        ],
+        orphans: [],
     });
-
-    bot.subscribe(GROUP_ID);
-    await bot.sendMessage(GROUP_ID, 'e2e: broadcast подписчику (после subscribe)');
-
-    bot.unsubscribe(GROUP_ID);
-    // после unsubscribe подписчиков нет — broadcast никому не шлёт; проверяем, что вызов не падает
-    await assert.doesNotReject(() =>
-        bot.sendMessage(GROUP_ID, 'e2e: прямой sendMessage после unsubscribe'),
-    );
 });
 
-// polling-приём gen-команды проверен живым драйвером (см. отчёт): бот @crossfader_images_ai_bot
-// принял `@bot gen <ссылка>` в группе, распарсил ссылку и ответил в чат. Человека в чате не автоматизируем.
-test('e2e: TelegramGateway Bot — polling получает gen и рассылает (проверено живым драйвером)', {
-    skip: 'требует человека в чате; путь подтверждён живым прогоном live-gateway',
-}, () => {});
+test('e2e: TelegramGateway Commands — avito без поставщика впереди или вторая подряд => orphans (негативная ветка)', () => {
+    const text = `@${BOT} gen https://avito.ru/a_1111111111 https://supplier.kz/b https://avito.ru/b_2222222222 https://avito.ru/c_3333333333`;
+
+    assert.deepEqual(Commands.parse(text, BOT), {
+        kind: 'gen',
+        links: [{ url: 'https://supplier.kz/b', avitoId: '2222222222', price: null }],
+        orphans: ['https://avito.ru/a_1111111111', 'https://avito.ru/c_3333333333'],
+    });
+});
+
+test('e2e: TelegramGateway Commands — цена: число после ссылки, avito + цена, без ссылки впереди => orphans', () => {
+    const text = `@${BOT} gen https://supplier.kz/a 279000 https://supplier.kz/b https://avito.ru/x_1234567890 285000 https://supplier.kz/c 1000 2000`;
+
+    assert.deepEqual(Commands.parse(text, BOT), {
+        kind: 'gen',
+        links: [
+            { url: 'https://supplier.kz/a', avitoId: null, price: 279000 },
+            { url: 'https://supplier.kz/b', avitoId: '1234567890', price: 285000 },
+            { url: 'https://supplier.kz/c', avitoId: null, price: 1000 },
+        ],
+        orphans: ['2000'],
+    });
+    assert.deepEqual(Commands.parse(`@${BOT} gen 279000 https://supplier.kz/a`, BOT), {
+        kind: 'gen',
+        links: [{ url: 'https://supplier.kz/a', avitoId: null, price: null }],
+        orphans: ['279000'],
+    });
+    assert.deepEqual(Commands.parse(`@${BOT} gen https://supplier.kz/a 12 999999999 000`, BOT), {
+        kind: 'gen',
+        links: [{ url: 'https://supplier.kz/a', avitoId: null, price: null }],
+        orphans: ['12', '999999999', '000'],
+    });
+    assert.deepEqual(Commands.parse(`@${BOT} gen https://supplier.kz/a 1 279 000`, BOT), {
+        kind: 'gen',
+        links: [{ url: 'https://supplier.kz/a', avitoId: null, price: 1279000 }],
+        orphans: [],
+    });
+});
+
+test('e2e: TelegramGateway Commands — avito без номера объявления (категория, короткие цифры) — не avito-ссылка (негативная ветка)', () => {
+    const text = `@${BOT} gen https://supplier.kz/b https://www.avito.ru/astana/muzykalnye_instrumenty/casio_px_s1100`;
+
+    assert.deepEqual(Commands.parse(text, BOT), {
+        kind: 'gen',
+        links: [
+            { url: 'https://supplier.kz/b', avitoId: null, price: null },
+            {
+                url: 'https://www.avito.ru/astana/muzykalnye_instrumenty/casio_px_s1100',
+                avitoId: null,
+                price: null,
+            },
+        ],
+        orphans: [],
+    });
+});
+
+test('e2e: TelegramGateway Commands — упоминание в середине сообщения', () => {
+    const text = `Ребят, @${BOT} gen https://supplier.kz/x пожалуйста`;
+
+    assert.deepEqual(Commands.parse(text, BOT), {
+        kind: 'gen',
+        links: [{ url: 'https://supplier.kz/x', avitoId: null, price: null }],
+        orphans: [],
+    });
+});
+
+test('e2e: TelegramGateway Commands — регистр упоминания и команды не важен', () => {
+    const text = `@${BOT.toUpperCase()} GEN https://supplier.kz/y`;
+
+    assert.deepEqual(Commands.parse(text, BOT), {
+        kind: 'gen',
+        links: [{ url: 'https://supplier.kz/y', avitoId: null, price: null }],
+        orphans: [],
+    });
+});
+
+test('e2e: TelegramGateway Commands — gen без ссылок => { links: [] } (негативная ветка)', () => {
+    assert.deepEqual(Commands.parse(`@${BOT} gen`, BOT), { kind: 'gen', links: [], orphans: [] });
+});
+
+test('e2e: TelegramGateway Commands — get/drop 42 и без числа', () => {
+    assert.deepEqual(Commands.parse(`@${BOT} get 42`, BOT), { kind: 'get', id: 42 });
+    assert.deepEqual(Commands.parse(`@${BOT} GET №7`, BOT), { kind: 'get', id: 7 });
+    assert.deepEqual(Commands.parse(`@${BOT} get`, BOT), { kind: 'get', id: null });
+    assert.deepEqual(Commands.parse(`@${BOT} drop 3`, BOT), { kind: 'drop', id: 3 });
+    assert.deepEqual(Commands.parse(`@${BOT} drop`, BOT), { kind: 'drop', id: null });
+});
+
+test('e2e: TelegramGateway Commands — publish', () => {
+    assert.deepEqual(Commands.parse(`@${BOT} publish`, BOT), { kind: 'publish' });
+    assert.deepEqual(Commands.parse(`@${BOT} Publish пожалуйста`, BOT), { kind: 'publish' });
+});
+
+test('e2e: TelegramGateway Commands — не команда => null', () => {
+    assert.equal(Commands.parse('просто болтаем про https://avito.ru/z', BOT), null);
+    assert.equal(Commands.parse(`@${BOT} привет`, BOT), null);
+    assert.equal(Commands.parse(`@${BOT} generate https://avito.ru/z`, BOT), null);
+    assert.equal(Commands.parse(`@other_bot gen https://avito.ru/z`, BOT), null);
+});
+
+test('e2e: TelegramGateway Commands — extractLinks срезает хвостовую пунктуацию', () => {
+    assert.deepEqual(
+        Commands.extractLinks('смотри https://supplier.kz/1, и https://supplier.kz/2.').links,
+        [
+            { url: 'https://supplier.kz/1', avitoId: null, price: null },
+            { url: 'https://supplier.kz/2', avitoId: null, price: null },
+        ],
+    );
+    assert.deepEqual(Commands.extractLinks('текст без ссылок'), { links: [], orphans: [] });
+});
+
+test('e2e: TelegramGateway Commands — callback_data кнопок: encode → parse симметричны', () => {
+    const cases = [
+        { kind: 'xlsx', yes: true },
+        { kind: 'xlsx', yes: false },
+        { kind: 'publish', yes: true },
+        { kind: 'publish', yes: false },
+    ] as const;
+
+    for (const cb of cases) {
+        assert.deepEqual(Commands.parseCallback(Commands.callbackData(cb)), cb);
+    }
+});
+
+test('e2e: TelegramGateway Commands — неизвестный callback_data => null (негативная ветка)', () => {
+    assert.equal(Commands.parseCallback('ok:abc'), null);
+    assert.equal(Commands.parseCallback('ok'), null);
+    assert.equal(Commands.parseCallback('foo:1'), null);
+    assert.equal(Commands.parseCallback(''), null);
+});

@@ -74,10 +74,10 @@ export class CategoryLookup {
   private readonly level2: CategoryNode[];
   private readonly pathByNode = new WeakMap<CategoryNode, string>();
 
-  // Единая модель gemini-3.5-flash (второй аргумент — fallback-ретрай внутри Gemma): fold видит enum'ы, а маршрут по именам надёжнее на flash, чем на lite.
+  // Единая модель gemini-3.8-flash (второй аргумент — fallback-ретрай внутри Gemma): fold видит enum'ы, а маршрут по именам надёжнее на flash, чем на lite.
   constructor(
     snapshot: Snapshot = CategorySnapshot.loadFile(DEFAULT_SNAPSHOT),
-    gemma: Gemma = new Gemma("gemini-3.5-flash", "gemma-4-26b-a4b-it"),
+    gemma: Gemma = new Gemma("gemini-3.8-flash", "gemma-4-26b-a4b-it"),
   ) {
     this.snapshot = snapshot;
     this.gemma = gemma;

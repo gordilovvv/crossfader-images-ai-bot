@@ -6,7 +6,7 @@ export type ObjectSize = z.infer<typeof ObjectSize>;
 
 // Дешёвая модель: габарит товара (big/small) для композиции картинок; нераспознанное → 'big' (осознанный дефолт)
 export class Classification {
-    private static readonly MODEL = 'gemini-3.1-flash-lite';
+    private static readonly MODEL = 'gemini-3.8-flash';
     private static readonly PROMPT =
         `Товар крупногабаритный (пианино, комбоусилитель, барабаны) или небольшой (наушники, педаль, микрофон, кабель)?
 Ответь строго одним словом: big или small.

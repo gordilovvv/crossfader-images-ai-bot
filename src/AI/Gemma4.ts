@@ -1,4 +1,8 @@
-import type { GenerateContentConfig, GenerateContentResponse } from '@google/genai';
+import {
+    type GenerateContentConfig,
+    type GenerateContentResponse,
+    ThinkingLevel,
+} from '@google/genai';
 import { z } from 'zod';
 import { buildParts, extractText, genai, parseFirstJson, perf, type RefImage } from './Utils.ts';
 
@@ -26,22 +30,16 @@ export class Gemma {
         return text;
     }
 
-    // Структурированный вывод по Zod-схеме. Схему даём текстом в промпте (responseSchema раздувает выход до MAX_TOKENS
-    // и тормозит на этой модели). JSON-mime + parseFirstJson + zod-валидация; 1 ретрай на большую модель, потом fail-fast.
+    // Схема текстом в промпте (responseSchema раздувает выход), минимальный thinking (иначе 60с и обрыв по лимиту), 1 ретрай на большую модель.
     async askJson<T>(prompt: string, schema: z.ZodType<T>, images: RefImage[] = []): Promise<T> {
         const jsonSchema = z.toJSONSchema(schema) as Record<string, unknown>;
         delete jsonSchema.$schema;
         const shape = `\n\nВерни JSON строго по этой JSON-схеме, без markdown:\n${JSON.stringify(jsonSchema)}`;
-        const config: GenerateContentConfig = {
-            responseMimeType: 'application/json',
-            temperature: 0,
-            maxOutputTokens: 8192,
-        };
         const call = (model: string, extra = '') =>
             genai.models.generateContent({
                 model,
                 contents: buildParts(prompt + shape + extra, images),
-                config,
+                config: Gemma.jsonConfig(model),
             });
 
         const start = process.hrtime.bigint();
@@ -70,6 +68,17 @@ export class Gemma {
     }
 
     // Обрыв по лимиту токенов — не ошибка качества: эскалация на большую модель обрежется так же. Fail-fast.
+    // Gemma принимает только MINIMAL, Gemini — только LOW и выше.
+    private static jsonConfig(model: string): GenerateContentConfig {
+        const level = model.startsWith('gemma') ? ThinkingLevel.MINIMAL : ThinkingLevel.LOW;
+        return {
+            responseMimeType: 'application/json',
+            temperature: 0,
+            maxOutputTokens: 8192,
+            thinkingConfig: { thinkingLevel: level },
+        };
+    }
+
     private static assertNotTruncated(resp: GenerateContentResponse): void {
         if (resp.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
             throw new Error(

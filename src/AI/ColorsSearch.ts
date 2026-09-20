@@ -3,7 +3,7 @@ import { genai, parseFirstJson, perf } from './Utils.ts';
 
 // Цвета отделки товара через Gemini с Google-поиском. Фолбэк, когда парсер цвет не нашёл.
 export class ColorsSearch {
-    private static readonly MODEL = 'gemini-3.5-flash';
+    private static readonly MODEL = 'gemini-3.8-flash';
     private static readonly SCHEMA = z.object({ colors: z.array(z.string().min(1)) });
     private static readonly PROMPT = (title: string) =>
         `Определи официальные цвета отделки корпуса ТОЧНО для модели "${title}" по результатам поиска.

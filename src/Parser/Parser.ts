@@ -55,7 +55,10 @@ export class Parser {
                     loaded.push(resp.url());
                 }
             });
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+            const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+            if (resp && resp.status() >= 400) {
+                throw new Error(`страница поставщика отдала HTTP ${resp.status()}`);
+            }
             const s = await snapshot(page);
             await Parser.revealGallery(page).catch(() => {});
             return s;
