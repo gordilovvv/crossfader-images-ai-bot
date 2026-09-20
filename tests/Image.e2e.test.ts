@@ -2,27 +2,29 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { RefImage } from '../src/AI/Utils.ts';
-import { ImageGeneration, type ProductData } from '../src/Image/ImageGeneration.ts';
+import { type CardImage, ImageGeneration, type ProductData } from '../src/Image/ImageGeneration.ts';
+import { Prompts } from '../src/Image/Promts.ts';
 import { imageExt, measure, saveArtifact } from './helpers/e2e.ts';
 
-test('e2e: ImageGeneration — ProductData + фото → 6 карточек с текстом/графикой [paid]', async () => {
-    const product = JSON.parse(
-        readFileSync(new URL('./fixtures/product-ca701.json', import.meta.url), 'utf8'),
+function fixture(name: string): ProductData {
+    return JSON.parse(
+        readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'),
     ) as ProductData;
-    const raw = readFileSync(new URL('./refs/raw.png', import.meta.url));
-    const photo: RefImage = { bytes: raw, mimeType: 'image/png' };
+}
 
-    const { result: cards } = await measure('generate 6 карточек', () =>
-        new ImageGeneration().generate(product, photo),
-    );
+function photo(file: string): RefImage {
+    return {
+        bytes: readFileSync(new URL(`./refs/${file}`, import.meta.url)),
+        mimeType: 'image/png',
+    };
+}
 
-    assert.equal(cards.length, 6, 'ждём ровно 6 карточек');
+async function assertCards(prefix: string, cards: CardImage[], slots: number[]) {
     assert.deepEqual(
         cards.map((c) => c.slot),
-        [1, 2, 3, 4, 5, 6],
-        'слоты по порядку 1..6',
+        slots,
+        'набор и порядок слотов',
     );
-
     for (const card of cards) {
         const ext = imageExt(card.image);
         assert.ok(ext, `слот ${card.slot} (${card.name}): не PNG/JPEG`);
@@ -30,6 +32,45 @@ test('e2e: ImageGeneration — ProductData + фото → 6 карточек с 
             card.image.length > 10000,
             `слот ${card.slot} (${card.name}): картинка подозрительно мала ${card.image.length}b`,
         );
-        await saveArtifact(`card-${card.slot}-${card.name}.${ext}`, card.image);
+        await saveArtifact(`${prefix}-card-${card.slot}-${card.name}.${ext}`, card.image);
     }
+}
+
+test('e2e: Prompts — блок фактов товара подставлен в слоты 2/3, остальные без изменений', () => {
+    const prompts = Prompts.build(fixture('product-audac'));
+    for (const p of prompts) {
+        assert.doesNotMatch(p.prompt, /\{\{PRODUCT\}\}/, `слот ${p.slot}: плейсхолдер не заменён`);
+    }
+    for (const slot of [2, 3]) {
+        const p = prompts[slot - 1]!.prompt;
+        assert.match(p, /placement: wall/, `слот ${slot}: нет placement`);
+        assert.match(p, /24\.4×42\.5×25\.6 cm/, `слот ${slot}: нет габаритов`);
+        assert.match(p, /shoebox/, `слот ${slot}: нет якоря высоты`);
+        assert.match(
+            p,
+            /markings remain exactly as in the reference photo[^\n]*$/,
+            `слот ${slot}: бейдж не последней строкой`,
+        );
+    }
+    for (const slot of [1, 4, 5]) {
+        assert.doesNotMatch(
+            prompts[slot - 1]!.prompt,
+            /PRODUCT FACTS/,
+            `слот ${slot}: лишний блок`,
+        );
+    }
+});
+
+test('e2e: ImageGeneration — пианино (floor) → 6 карточек [paid]', async () => {
+    const { result: cards } = await measure('generate KAWAI', () =>
+        new ImageGeneration().generate(fixture('product-ca701'), photo('raw.png')),
+    );
+    await assertCards('kawai', cards, [1, 2, 3, 4, 5, 6]);
+});
+
+test('e2e: ImageGeneration — настенная колонка (wall, без комплектации) → 5 карточек [paid]', async () => {
+    const { result: cards } = await measure('generate AUDAC', () =>
+        new ImageGeneration().generate(fixture('product-audac'), photo('raw-audac.png')),
+    );
+    await assertCards('audac', cards, [1, 2, 3, 4, 6]);
 });

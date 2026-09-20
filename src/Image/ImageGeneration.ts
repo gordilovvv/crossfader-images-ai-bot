@@ -4,7 +4,7 @@ import { perf } from '../AI/Utils.ts';
 import type { ParsedProduct } from '../Parser/Parser.ts';
 import { Countries } from './Countries.ts';
 import { Graphics } from './Graphics.ts';
-import { loadCardPrompts } from './Promts.ts';
+import { Prompts } from './Promts.ts';
 import { Style } from './Style.ts';
 import { Text } from './Text.ts';
 
@@ -26,18 +26,18 @@ export class ImageGeneration {
 
     private readonly nano = new NanoBanano();
     private readonly graphics = new Graphics();
-    private readonly prompts = loadCardPrompts();
 
     async generate(product: ProductData, photo: RefImage): Promise<CardImage[]> {
         const start = process.hrtime.bigint();
         try {
+            const prompts = Prompts.build(product);
             const backgrounds = await Promise.all(
-                this.prompts.map((card) => this.nano.generate(card.prompt, [photo])),
+                prompts.map((card) => this.nano.generate(card.prompt, [photo])),
             );
             const builders = [this.card1, this.card2, this.card3, this.card4, this.card5] as const;
             const cards: CardImage[] = [];
             for (let i = 0; i < builders.length; i++) {
-                const card = this.prompts[i];
+                const card = prompts[i];
                 const bg = backgrounds[i];
                 const build = builders[i];
                 if (!card || !bg || !build) {

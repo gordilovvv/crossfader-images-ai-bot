@@ -81,6 +81,7 @@
     "unit": "см",
     "weightKg": 76.5
   },
+  "placement": "floor",
   "contents": [
     "Банкетка"
   ],

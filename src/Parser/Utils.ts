@@ -45,6 +45,7 @@ export const Extract = z.object({
             weightKg: z.number().default(0),
         })
         .prefault({}),
+    placement: z.enum(['floor', 'wall', 'desk', 'handheld']).default('floor'),
     contents: z.array(z.string()).max(30).default([]),
 });
 export type Extract = z.infer<typeof Extract>;

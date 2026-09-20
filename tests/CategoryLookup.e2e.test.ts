@@ -341,6 +341,7 @@ function trap(
         identity: { title, brand, model, country: '' },
         specs: specs.map(([label, value]) => ({ label, value })),
         dimensions: { w: 0, h: 0, d: 0, unit: 'см', weightKg: 0 },
+        placement: 'floor',
         contents: [],
         images: { source: [] },
         description: { html },

@@ -23,6 +23,7 @@ export type ParsedProduct = {
     identity: { title: string; brand: string; model: string; country: string };
     specs: Array<{ label: string; value: string }>;
     dimensions: { w: number; h: number; d: number; unit: string; weightKg: number };
+    placement: Extract['placement'];
     contents: string[];
     images: { source: string[] };
     description: { html: string };
@@ -84,6 +85,7 @@ export class Parser {
             identity: extract.identity,
             specs,
             dimensions: extract.dimensions,
+            placement: extract.placement,
             contents: extract.contents,
             images: { source: images.slice(0, 10) },
             description: { html: description },

@@ -1,22 +1,51 @@
 import { readFileSync } from 'node:fs';
-
-const DIR = new URL('./prompts/', import.meta.url);
+import type { ParsedProduct } from '../Parser/Parser.ts';
 
 export type CardPrompt = { slot: number; name: string; prompt: string };
 
 // 5 фонов под слоты 1..5. Слот 6 общий — статичный PNG-ассет, моделью не генерится.
-const FILES = [
-    '01-hero-yellow.md',
-    '02-interior-specs.md',
-    '03-interior-lifestyle.md',
-    '04-dimensions.md',
-    '05-closeup-detail.md',
-] as const;
+export class Prompts {
+    private static readonly FILES = [
+        '01-hero-yellow.md',
+        '02-interior-specs.md',
+        '03-interior-lifestyle.md',
+        '04-dimensions.md',
+        '05-closeup-detail.md',
+    ] as const;
+    private static readonly PLACEHOLDER = '{{PRODUCT}}';
+    private static readonly TEMPLATES = Prompts.FILES.map((file) =>
+        readFileSync(new URL(`./prompts/${file}`, import.meta.url), 'utf8').trim(),
+    );
+    // Якорь высоты относительно взрослого 175 см: image-модель держит сравнение лучше, чем сантиметры.
+    private static readonly HEIGHT_ANCHORS: Array<[number, string]> = [
+        [20, 'fits in one hand'],
+        [45, 'about the size of a shoebox, smaller than a side table'],
+        [75, 'knee-high to an adult'],
+        [110, 'waist-high to an adult'],
+        [150, 'chest-high to an adult'],
+        [200, 'about as tall as an adult'],
+        [Number.POSITIVE_INFINITY, 'taller than an adult'],
+    ];
 
-export function loadCardPrompts(): CardPrompt[] {
-    return FILES.map((file, i) => ({
-        slot: i + 1,
-        name: file.replace(/\.md$/, ''),
-        prompt: readFileSync(new URL(file, DIR), 'utf8').trim(),
-    }));
+    static build(product: ParsedProduct): CardPrompt[] {
+        const facts = Prompts.facts(product);
+        return Prompts.TEMPLATES.map((tpl, i) => ({
+            slot: i + 1,
+            name: Prompts.FILES[i]!.replace(/\.md$/, ''),
+            prompt: tpl.replace(Prompts.PLACEHOLDER, facts),
+        }));
+    }
+
+    private static facts(p: ParsedProduct): string {
+        const { w, h, d, weightKg } = p.dimensions;
+        const anchor = Prompts.HEIGHT_ANCHORS.find(([max]) => h < max)![1];
+        return [
+            'PRODUCT FACTS (internal, never render as text):',
+            `kind: ${p.identity.title} (Russian)`,
+            `model: ${p.identity.brand} ${p.identity.model}`.trim(),
+            `size: ${w}×${h}×${d} cm (W×H×D) — ${anchor}`,
+            `weight: ${weightKg} kg`,
+            `placement: ${p.placement}`,
+        ].join('\n');
+    }
 }
