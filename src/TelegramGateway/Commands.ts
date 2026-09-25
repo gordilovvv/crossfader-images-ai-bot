@@ -22,7 +22,7 @@ export type Handlers = {
     onCallback: (cb: Callback | null) => Promise<string>;
 };
 
-// Ловит `@bot gen|get|drop|publish` и кнопки в группе, парсит и зовёт Handlers. Кодирует callback_data кнопок.
+// Ловит `@bot gen|get|drop|publish` и кнопки (только группа — фильтр в Telegram), парсит и зовёт Handlers. Кодирует callback_data кнопок.
 export class Commands {
     private static readonly URL_RE = /^https?:\/\//i;
     private static readonly AVITO_RE =
@@ -33,9 +33,6 @@ export class Commands {
 
     constructor(tg: Telegram, handlers: Handlers) {
         tg.grammy.on('message:text', async (ctx) => {
-            if (ctx.chat.id !== tg.groupId) {
-                return;
-            }
             const cmd = Commands.parse(ctx.message.text, ctx.me.username);
             if (!cmd) {
                 return;
@@ -57,10 +54,6 @@ export class Commands {
         });
 
         tg.grammy.on('callback_query:data', async (ctx) => {
-            if (ctx.chat?.id !== tg.groupId) {
-                await ctx.answerCallbackQuery();
-                return;
-            }
             const toast = await handlers.onCallback(Commands.parseCallback(ctx.callbackQuery.data));
             await ctx.answerCallbackQuery({ text: toast });
         });

@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Commands } from '../src/TelegramGateway/Commands.ts';
+import { Telegram } from '../src/TelegramGateway/Telegram.ts';
 
 const BOT = 'serega_bot';
+const GROUP = -1003991469615;
 
 test('e2e: TelegramGateway Commands — gen с одной ссылкой', () => {
     assert.deepEqual(Commands.parse(`@${BOT} gen https://supplier.kz/item/123`, BOT), {
@@ -155,4 +157,97 @@ test('e2e: TelegramGateway Commands — неизвестный callback_data => 
     assert.equal(Commands.parseCallback('ok'), null);
     assert.equal(Commands.parseCallback('foo:1'), null);
     assert.equal(Commands.parseCallback(''), null);
+});
+
+// Гард группы: апдейты не из TELEGRAM_GROUP_ID глушатся middleware до хендлеров. botInfo задан руками, чтобы не звать getMe.
+function fakeBot(groupId: number) {
+    const tg = new Telegram('0:fake', groupId);
+    tg.grammy.botInfo = {
+        id: 1,
+        is_bot: true,
+        first_name: 'bot',
+        username: BOT,
+    } as typeof tg.grammy.botInfo;
+    const calls: string[] = [];
+    new Commands(tg, {
+        onGen: async (links) => {
+            calls.push(`gen ${links.map((l) => l.url).join(' ')}`);
+        },
+        onGet: async (id) => {
+            calls.push(`get ${id}`);
+        },
+        onDrop: async (id) => {
+            calls.push(`drop ${id}`);
+        },
+        onPublish: async () => {
+            calls.push('publish');
+        },
+        onCallback: async (cb) => {
+            calls.push(`callback ${cb?.kind}:${cb?.yes}`);
+            return 'ok';
+        },
+    });
+    return { tg, calls };
+}
+
+function textUpdate(updateId: number, chatId: number, text: string, type = 'supergroup') {
+    return {
+        update_id: updateId,
+        message: {
+            message_id: updateId,
+            date: 0,
+            chat: { id: chatId, type, title: 't' },
+            from: { id: 7, is_bot: false, first_name: 'u' },
+            text,
+        },
+    } as Parameters<Telegram['grammy']['handleUpdate']>[0];
+}
+
+test('e2e: TelegramGateway гард — команды из своей группы доходят до хендлеров', async () => {
+    const { tg, calls } = fakeBot(GROUP);
+
+    await tg.grammy.handleUpdate(textUpdate(1, GROUP, `@${BOT} gen https://supplier.kz/a`));
+    await tg.grammy.handleUpdate(textUpdate(2, GROUP, `@${BOT} publish`));
+
+    assert.deepEqual(calls, ['gen https://supplier.kz/a', 'publish']);
+});
+
+test('e2e: TelegramGateway гард — личка и чужие группы молчат (негативная ветка)', async () => {
+    const { tg, calls } = fakeBot(GROUP);
+    tg.grammy.api.config.use(() => {
+        throw new Error('бот полез в API вне группы');
+    });
+
+    await tg.grammy.handleUpdate(textUpdate(1, 7, `@${BOT} gen https://supplier.kz/a`, 'private'));
+    await tg.grammy.handleUpdate(textUpdate(3, GROUP + 1, `@${BOT} get 1`));
+    await tg.grammy.handleUpdate({
+        update_id: 5,
+        inline_query: {
+            id: '1',
+            from: { id: 7, is_bot: false, first_name: 'u' },
+            query: '',
+            offset: '',
+        },
+    });
+    await tg.grammy.handleUpdate({
+        update_id: 4,
+        callback_query: {
+            id: '1',
+            from: { id: 7, is_bot: false, first_name: 'u' },
+            chat_instance: 'x',
+            data: Commands.callbackData({ kind: 'xlsx', yes: true }),
+            message: {
+                message_id: 4,
+                date: 0,
+                chat: { id: 7, type: 'private', first_name: 'u' },
+                text: 'q',
+            },
+        },
+    });
+
+    assert.deepEqual(calls, []);
+});
+
+test('e2e: TelegramGateway гард — TELEGRAM_GROUP_ID не число => падает на старте (негативная ветка)', () => {
+    assert.throws(() => new Telegram('0:fake', Number('abc')), /TELEGRAM_GROUP_ID/);
 });

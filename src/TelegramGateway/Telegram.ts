@@ -9,7 +9,7 @@ export type RichPhoto = { id: string; bytes: Buffer; name: string };
 
 export type Rich = { markdown: string; photos: RichPhoto[] };
 
-// Транспорт: отправка сообщений в одну группу, polling, retry на 429. Команды ловит Commands.
+// Транспорт: отправка сообщений в одну группу, polling, retry на 429. Апдейты не из группы глушит middleware. Команды ловит Commands.
 export class Telegram {
     private static readonly RETRIES = 3;
     private static readonly SEEN = '👍';
@@ -18,8 +18,12 @@ export class Telegram {
     readonly groupId: number;
 
     constructor(token: string, groupId: number) {
+        if (!Number.isInteger(groupId)) {
+            throw new Error(`TELEGRAM_GROUP_ID не целое число: ${groupId}`);
+        }
         this.grammy = new GrammyBot(token);
         this.groupId = groupId;
+        this.grammy.use((ctx, next) => (ctx.chat?.id === groupId ? next() : Promise.resolve()));
     }
 
     async sendText(text: string, buttons: Button[][] = []): Promise<void> {
