@@ -31,7 +31,12 @@ export class S3 {
         return bytes;
     }
 
-    async upload(key: string, body: Buffer | string, contentType: string): Promise<string> {
+    async upload(
+        key: string,
+        body: Buffer | string,
+        contentType: string,
+        cacheControl?: string,
+    ): Promise<string> {
         const start = process.hrtime.bigint();
         await this.client.send(
             new PutObjectCommand({
@@ -39,6 +44,7 @@ export class S3 {
                 Key: key,
                 Body: body,
                 ContentType: contentType,
+                CacheControl: cacheControl,
             }),
         );
         perf('S3', `upload ${key} ${body.length}b`, start);

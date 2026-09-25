@@ -46,8 +46,10 @@ export class AvitoUploader {
             throw new Error(`[AvitoUploader] Avito ещё обрабатывает прошлую выгрузку № ${last.id}`);
         }
         const lastId = last?.id ?? null;
-        await this.s3.upload(AvitoUploader.FEED_KEY, xml, 'text/xml');
+        // Без no-cache CDN Selectel может отдать Avito старую версию фида.
+        await this.s3.upload(AvitoUploader.FEED_KEY, xml, 'text/xml', 'no-cache');
         try {
+            // TODO: рестарт процесса во время ожидания оставит профиль включённым.
             await this.api.saveProfile({ ...profile, autoload_enabled: true });
             await this.api.upload();
             const id = await this.waitReport(lastId, onTick);
@@ -59,6 +61,7 @@ export class AvitoUploader {
             perf('AvitoUploader', `publish ${adIds.length} ads → ${status}`, start);
             return { status, stats, errors };
         } finally {
+            // TODO: сбой выключения затирает исходную ошибку/результат — писать в чат «профиль остался включён».
             await this.retry(() => this.api.saveProfile({ ...profile, autoload_enabled: false }));
         }
     }

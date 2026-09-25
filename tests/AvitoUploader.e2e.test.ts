@@ -78,7 +78,10 @@ class FakeAvito {
 }
 
 function uploader(fake: FakeAvito, uploads: string[]): AvitoUploader {
-    const s3 = { upload: async (key: string) => uploads.push(key) } as unknown as S3;
+    const s3 = {
+        upload: async (key: string, _body: string, type: string, cache: string) =>
+            uploads.push(`${key} ${type} ${cache}`),
+    } as unknown as S3;
     return new AvitoUploader(fake as unknown as AvitoApi, s3, 1);
 }
 
@@ -132,7 +135,7 @@ test('e2e: AvitoUploader — свой отчёт по id, сбои опроса,
         ['id-3'],
         'ошибки вне плана отброшены',
     );
-    assert.deepEqual(uploads, [AvitoUploader.FEED_KEY]);
+    assert.deepEqual(uploads, [`${AvitoUploader.FEED_KEY} text/xml no-cache`], 'фид без кеша CDN');
     assert.deepEqual(ticks, [30]);
     const i = fake.calls.indexOf('upload');
     assert.deepEqual(fake.calls.slice(0, i + 1), ['profile', 'last', 'on', 'upload']);
