@@ -10,9 +10,11 @@ import { Messages, type Question } from './TelegramGateway/Messages.ts';
 import { Preview } from './TelegramGateway/Preview.ts';
 import { Telegram } from './TelegramGateway/Telegram.ts';
 import { type AvitoProduct, AvitoProducts } from './XMLFeedAvito/AvitoProducts.ts';
+import { AvitoUploader } from './XMLFeedAvito/AvitoUploader.ts';
 import { CategoryLookup, type CategoryResult } from './XMLFeedAvito/CategoryLookup.ts';
 import { type Description, ProductDescription } from './XMLFeedAvito/ProductDescription.ts';
 import { S3 } from './XMLFeedAvito/S3.ts';
+import { XMLBuilder } from './XMLFeedAvito/XMLBuilder.ts';
 
 export type Listing = {
     id: number;
@@ -40,6 +42,7 @@ export class Bot {
     private readonly lookup = new CategoryLookup();
     private readonly images = new ImageGeneration();
     private readonly descriptions = new ProductDescription();
+    private readonly uploader = new AvitoUploader();
 
     private readonly listings = new Map<number, Listing>();
     private readonly queue: GenLink[] = [];
@@ -217,6 +220,10 @@ export class Bot {
     }
 
     private async drop(id: number | null): Promise<void> {
+        if (this.state === 'publishing') {
+            await this.tg.sendText(Messages.PUBLISHING);
+            return;
+        }
         const listing = id === null ? null : this.listings.get(id);
         if (!listing) {
             await this.tg.sendText(Messages.unknownListing(id, 'drop'));
@@ -244,10 +251,54 @@ export class Bot {
             case 'xlsx':
                 return this.xlsxAnswer(cb.yes);
             case 'publish':
-                // TODO: publish — all.xlsx + план → XML → S3 → trigger автозагрузки → poll отчёта (отдельная задача)
-                return cb.yes ? Messages.TOAST.publishTodo : Messages.TOAST.publishLater;
+                return this.publishAnswer(cb.yes);
             default:
                 return Messages.TOAST.unknownButton;
+        }
+    }
+
+    private publishAnswer(yes: boolean): string {
+        if (!yes) {
+            return Messages.TOAST.publishLater;
+        }
+        if (this.state !== 'idle') {
+            return Messages.TOAST.busy;
+        }
+        if (this.listings.size === 0) {
+            return Messages.PLAN_EMPTY;
+        }
+        void this.publishFeed();
+        return Messages.TOAST.go;
+    }
+
+    // Ошибка выгрузки — в чат, план остаётся: менеджер видит причину и повторяет publish.
+    private async publishFeed(): Promise<void> {
+        this.state = 'publishing';
+        const plan = [...this.listings.values()];
+        try {
+            const catalog = AvitoProducts.parse(await this.s3.download(env.AVITO_EXCEL_S3_KEY));
+            const xml = XMLBuilder.build(catalog, plan);
+            if (env.AVITO_FEED_UPLOAD === 'false') {
+                await this.tg.sendDocument(Buffer.from(xml), 'avito-feed.xml', Messages.UPLOAD_OFF);
+                return;
+            }
+            const ids = plan.map((l) => XMLBuilder.adId(l));
+            const result = await this.uploader.publish(xml, ids, (min) =>
+                this.tg.sendText(Messages.stillWaiting(min)),
+            );
+            await this.tg.sendText(Messages.published(plan, result));
+            if (result.status !== 'error') {
+                for (const l of plan) {
+                    this.listings.delete(l.id);
+                }
+            }
+        } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            console.error('[Bot] publish failed', err);
+            await this.tg.sendText(Messages.publishFailed(reason));
+        } finally {
+            this.state = 'idle';
+            void this.drain();
         }
     }
 

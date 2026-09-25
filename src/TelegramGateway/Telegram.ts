@@ -28,6 +28,12 @@ export class Telegram {
         });
     }
 
+    async sendDocument(bytes: Buffer, name: string, caption: string): Promise<void> {
+        await Telegram.withRetry(() =>
+            this.grammy.api.sendDocument(this.groupId, new InputFile(bytes, name), { caption }),
+        );
+    }
+
     async sendRich(rich: Rich): Promise<void> {
         await Telegram.withRetry(() =>
             this.grammy.api.sendRichMessage(this.groupId, Telegram.richMessage(rich)),

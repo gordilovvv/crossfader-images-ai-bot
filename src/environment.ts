@@ -13,6 +13,7 @@ const schema = z.object({
     S3_SECRET_KEY: z.string(),
     S3_PUBLIC_DOMAIN: z.string(),
     AVITO_EXCEL_S3_KEY: z.string(),
+    AVITO_FEED_UPLOAD: z.enum(['true', 'false']),
 });
 
 export const env = schema.parse(process.env);
