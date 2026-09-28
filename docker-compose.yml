@@ -1,14 +1,15 @@
 services:
-  api:
+  bot:
     image: serega-bot-images:${VERSION:-latest}
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:${PORT}:${PORT}"
-    env_file: .env
-    command: ["node", "src/webhook.ts"]
-
-  worker:
-    image: serega-bot-images:${VERSION:-latest}
+    build: .
     restart: unless-stopped
     env_file: .env
-    command: ["node", "src/worker.ts"]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: "--max-old-space-size=1024"
+    init: true
+    mem_limit: 2048m
+    mem_reservation: 512m
+    shm_size: '512mb'
+    stop_grace_period: 30s
+    command: ["node", "src/main.ts"]

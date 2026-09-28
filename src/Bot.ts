@@ -1,3 +1,4 @@
+import { ApiError } from '@google/genai';
 import { ulid } from 'ulid';
 import { ColorsSearch } from './AI/ColorsSearch.ts';
 import { perf, type RefImage } from './AI/Utils.ts';
@@ -149,8 +150,12 @@ export class Bot {
             this.lastGenAt = Date.now();
             perf('Bot', `gen № ${listing.id} ${listing.description.title}`, start);
         } catch (err) {
-            const reason = err instanceof Error ? err.message : String(err);
             console.error(`[Bot] gen ${link.url} failed`, err);
+            if (err instanceof ApiError && err.status === 402) {
+                await this.tg.sendText(Messages.noCredits(link.url));
+                return;
+            }
+            const reason = err instanceof Error ? err.message : String(err);
             await this.tg.sendText(Messages.failed(link.url, reason));
         }
     }

@@ -36,6 +36,9 @@ export class AvitoUploader {
         const feedUrl = S3.publicUrl(AvitoUploader.FEED_KEY);
         const profile = await this.api.profile();
         const feeds = profile.feeds_data?.map((f) => f.feed_url) ?? [];
+        console.log(
+            `[AvitoUploader] профиль: autoload_enabled=${profile.autoload_enabled}, фиды: ${feeds.join(', ') || 'нет'}`,
+        );
         if (feeds.length !== 1 || feeds[0] !== feedUrl) {
             throw new Error(
                 `[AvitoUploader] в профиле Avito фиды ${feeds.join(', ') || 'не заданы'}, ожидали только ${feedUrl}`,
@@ -46,23 +49,33 @@ export class AvitoUploader {
             throw new Error(`[AvitoUploader] Avito ещё обрабатывает прошлую выгрузку № ${last.id}`);
         }
         const lastId = last?.id ?? null;
+        console.log(
+            `[AvitoUploader] последний отчёт: ${last ? `№ ${last.id} ${last.status}` : 'нет'}`,
+        );
         // Без no-cache CDN Selectel может отдать Avito старую версию фида.
         await this.s3.upload(AvitoUploader.FEED_KEY, xml, 'text/xml', 'no-cache');
+        console.log(`[AvitoUploader] фид ${xml.length}b загружен: ${feedUrl}`);
         try {
             // TODO: рестарт процесса во время ожидания оставит профиль включённым.
             await this.api.saveProfile({ ...profile, autoload_enabled: true });
+            console.log('[AvitoUploader] автозагрузка включена');
             await this.api.upload();
+            console.log('[AvitoUploader] выгрузка запущена, жду отчёт');
             const id = await this.waitReport(lastId, onTick);
             const { status, stats } = await this.retry(() => this.api.report(id));
+            console.log(`[AvitoUploader] отчёт № ${id} ${status}: ${JSON.stringify(stats)}`);
             const plan = new Set(adIds);
-            const errors = (await this.retry(() => this.api.reportErrors(id))).filter((i) =>
-                plan.has(i.ad_id),
+            const allErrors = await this.retry(() => this.api.reportErrors(id));
+            const errors = allErrors.filter((i) => plan.has(i.ad_id));
+            console.log(
+                `[AvitoUploader] ошибок в отчёте ${allErrors.length}, из плана ${errors.length}`,
             );
             perf('AvitoUploader', `publish ${adIds.length} ads → ${status}`, start);
             return { status, stats, errors };
         } finally {
             // TODO: сбой выключения затирает исходную ошибку/результат — писать в чат «профиль остался включён».
             await this.retry(() => this.api.saveProfile({ ...profile, autoload_enabled: false }));
+            console.log('[AvitoUploader] автозагрузка выключена');
         }
     }
 
@@ -75,7 +88,13 @@ export class AvitoUploader {
             const report: AutoloadReport | null = await this.retry(() =>
                 id === null ? this.api.lastReport() : this.api.report(id),
             );
+            console.log(
+                `[AvitoUploader] poll ${poll}: ${report ? `отчёт № ${report.id} ${report.status}` : 'отчёта нет'}`,
+            );
             if (report && report.id !== lastId) {
+                if (ours === null) {
+                    console.log(`[AvitoUploader] наш отчёт № ${report.id}`);
+                }
                 ours = report.id;
                 if (report.status !== 'processing') {
                     return report.id;

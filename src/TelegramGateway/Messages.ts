@@ -56,6 +56,10 @@ export class Messages {
         return `❌ Не получилось: ${url}\n\n${reason}\n\nКинь ссылку ещё раз.`;
     }
 
+    static noCredits(url: string): string {
+        return `💳 Не получилось: ${url}\n\nНедостаточно кредитов на балансе Google AI для генерации (402 RESOURCE_EXHAUSTED). Пополни баланс в AI Studio и кинь ссылку ещё раз.`;
+    }
+
     static xlsxQuestion(): Question {
         return {
             text: 'all.xlsx в Selectel актуальный?',
