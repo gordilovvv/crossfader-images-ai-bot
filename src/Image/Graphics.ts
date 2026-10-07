@@ -47,7 +47,7 @@ export class Graphics {
                 .toString('utf8')
                 .replace('fill="white" fill-opacity="0.15"', 'fill="#1D1D1D" fill-opacity="1"'),
     );
-    private static readonly CARD6 = readAsset('card-general.jpg');
+    private static readonly CARD5 = readAsset('card-general.jpg');
 
     private browser: Browser | undefined;
     private page: Page | undefined;
@@ -217,10 +217,6 @@ html,body{width:${Graphics.SIZE}px;height:${Graphics.SIZE}px}
         return `<div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0) ${pct}%,rgba(0,0,0,${max}) 100%)"></div>`;
     }
 
-    static scrimFlat(opacity = 0.45): string {
-        return `<div style="position:absolute;inset:0;background:rgba(0,0,0,${opacity})"></div>`;
-    }
-
     /** Лёгкий eased-скрим на весь кадр (проценты resolution-independent). Контраст добивает text-shadow. */
     static scrimSoft(): string {
         return `<div style="position:absolute;inset:0;background:${Style.SCRIM.soft}"></div>`;
@@ -273,8 +269,8 @@ ${flag}
 </div>`;
     }
 
-    /** Статичная общая карточка 6 — готовый ассет, ничего не рендерим. */
-    static card6(): Buffer {
-        return Graphics.CARD6;
+    /** Статичная общая карточка 5 — готовый ассет, ничего не рендерим. */
+    static card5(): Buffer {
+        return Graphics.CARD5;
     }
 }

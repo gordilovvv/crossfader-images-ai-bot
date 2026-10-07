@@ -2,7 +2,6 @@ import { NanoBanano } from '../AI/NanoBanano.ts';
 import type { RefImage } from '../AI/Utils.ts';
 import { perf } from '../AI/Utils.ts';
 import type { ParsedProduct } from '../Parser/Parser.ts';
-import { Countries } from './Countries.ts';
 import { Graphics } from './Graphics.ts';
 import { Prompts } from './Promts.ts';
 import { Style } from './Style.ts';
@@ -34,7 +33,7 @@ export class ImageGeneration {
             const backgrounds = await Promise.all(
                 prompts.map((card) => this.nano.generate(card.prompt, [photo])),
             );
-            const builders = [this.card1, this.card2, this.card3, this.card4, this.card5] as const;
+            const builders = [this.card1, this.card2, this.card3, this.card4] as const;
             const cards: CardImage[] = [];
             for (let i = 0; i < builders.length; i++) {
                 const card = prompts[i];
@@ -44,11 +43,9 @@ export class ImageGeneration {
                     throw new Error(`[ImageGeneration] нет фона для слота ${i + 1}`);
                 }
                 const image = await build.call(this, product, bg);
-                if (image) {
-                    cards.push({ slot: card.slot, name: card.name, image });
-                }
+                cards.push({ slot: card.slot, name: card.name, image });
             }
-            cards.push({ slot: 6, name: '06-brand-general', image: Graphics.card6() });
+            cards.push({ slot: 5, name: '05-brand-general', image: Graphics.card5() });
             perf(
                 'ImageGeneration',
                 `${cards.length} карточек (${product.identity.brand} ${product.identity.model})`,
@@ -171,54 +168,6 @@ export class ImageGeneration {
             Graphics.scrimDynamic(Style.SLOT4.gradientDensity),
             Graphics.logo(ImageGeneration.LOGO_CORNER, Style.LOGO_CORNER.width),
             block,
-        ].join('');
-        return this.graphics.render(inner);
-    }
-
-    /** Комплектация: тёмное макро, top-якорь заголовок+буллеты (N переменное), лого + страна снизу. */
-    private async card5(p: ProductData, bg: Buffer): Promise<Buffer | null> {
-        if (p.contents.length === 0) {
-            return null;
-        }
-        const s5 = Style.SLOT5;
-        const country = Countries.resolve(p.identity.country);
-        const fit = Style.fit(p.contents, s5.bullets);
-        const madeIn = country
-            ? Text.line(`Произведено в ${country.in}`, {
-                  right: s5.footer.madeIn.right,
-                  top: s5.footer.logo.top,
-                  size: s5.footer.madeIn.size,
-                  weight: s5.footer.madeIn.weight,
-                  color: Style.COLOR.white,
-                  lineHeight: s5.footer.madeIn.lineHeight,
-                  maxWidth: s5.footer.madeIn.maxWidth,
-              })
-            : '';
-        const inner = [
-            Graphics.bg(bg),
-            Graphics.scrimFlat(s5.overlay),
-            Text.heading('Комплектация', {
-                left: Style.PAD.x,
-                top: s5.titleTop,
-                size: s5.title.size,
-                weight: s5.title.weight,
-                color: s5.title.color,
-                maxWidth: ImageGeneration.TEXT_W,
-            }),
-            Text.bullets(fit.items, {
-                left: Style.PAD.x,
-                top: s5.bulletsTop,
-                size: fit.style.size,
-                lineHeight: fit.style.leading ?? fit.style.size,
-                weight: fit.style.weight,
-                color: fit.style.color,
-                maxWidth: ImageGeneration.TEXT_W,
-            }),
-            Graphics.logo(
-                `left:${s5.footer.logo.left}px;top:${s5.footer.logo.top}px`,
-                s5.footer.logo.width,
-            ),
-            madeIn,
         ].join('');
         return this.graphics.render(inner);
     }

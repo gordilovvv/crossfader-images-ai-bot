@@ -3,14 +3,13 @@ import type { ParsedProduct } from '../Parser/Parser.ts';
 
 export type CardPrompt = { slot: number; name: string; prompt: string };
 
-// 5 фонов под слоты 1..5. Слот 6 общий — статичный PNG-ассет, моделью не генерится.
+// 4 фона под слоты 1..4. Слот 5 общий — статичный PNG-ассет, моделью не генерится.
 export class Prompts {
     private static readonly FILES = [
         '01-hero-yellow.md',
         '02-interior-specs.md',
         '03-interior-lifestyle.md',
         '04-dimensions.md',
-        '05-closeup-detail.md',
     ] as const;
     private static readonly PLACEHOLDER = '{{PRODUCT}}';
     private static readonly TEMPLATES = Prompts.FILES.map((file) =>

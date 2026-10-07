@@ -52,7 +52,7 @@ test('e2e: Prompts — блок фактов товара подставлен �
             `слот ${slot}: бейдж не последней строкой`,
         );
     }
-    for (const slot of [1, 4, 5]) {
+    for (const slot of [1, 4]) {
         assert.doesNotMatch(
             prompts[slot - 1]!.prompt,
             /PRODUCT FACTS/,
@@ -61,16 +61,16 @@ test('e2e: Prompts — блок фактов товара подставлен �
     }
 });
 
-test('e2e: ImageGeneration — пианино (floor) → 6 карточек [paid]', async () => {
+test('e2e: ImageGeneration — пианино (floor) → 5 карточек [paid]', async () => {
     const { result: cards } = await measure('generate KAWAI', () =>
         new ImageGeneration().generate(fixture('product-ca701'), photo('raw.png')),
     );
-    await assertCards('kawai', cards, [1, 2, 3, 4, 5, 6]);
+    await assertCards('kawai', cards, [1, 2, 3, 4, 5]);
 });
 
-test('e2e: ImageGeneration — настенная колонка (wall, без комплектации) → 5 карточек [paid]', async () => {
+test('e2e: ImageGeneration — настенная колонка (wall) → 5 карточек [paid]', async () => {
     const { result: cards } = await measure('generate AUDAC', () =>
         new ImageGeneration().generate(fixture('product-audac'), photo('raw-audac.png')),
     );
-    await assertCards('audac', cards, [1, 2, 3, 4, 6]);
+    await assertCards('audac', cards, [1, 2, 3, 4, 5]);
 });

@@ -117,34 +117,6 @@ export class Style {
         } as TextStyle,
     };
 
-    static readonly SLOT5 = {
-        overlay: 0.58,
-        titleTop: Style.px(110),
-        title: { size: Style.px(110), weight: 900, color: Style.COLOR.white } as TextStyle,
-        bulletsTop: Style.px(236),
-        bullets: {
-            normal: {
-                size: Style.px(42),
-                leading: Style.px(72),
-                weight: 700,
-                color: Style.COLOR.yellow,
-            },
-            compact: { size: Style.px(37), leading: Style.px(64) },
-            capNormal: 8,
-            capMax: 10,
-        } as FitBlock,
-        footer: {
-            logo: { left: Style.px(90), top: Style.px(1075), width: Style.px(260) },
-            madeIn: {
-                right: Style.px(90),
-                size: Style.px(40),
-                weight: 700,
-                lineHeight: Style.px(100),
-                maxWidth: Style.px(700),
-            },
-        },
-    };
-
     static readonly SLOT1 = {
         cornerPlusInset: Style.px(40),
         plusWidth: Style.px(28),
