@@ -30,13 +30,12 @@ export class ProductDescription {
         '<p><strong>Гарантия 12 месяцев</strong><br/> Предоставляем годовую гарантию от нашего сервисного центра <strong>CROSSFADER</strong>.</p>',
         '<p><strong>Товар в наличии</strong><br/> Не нужно ждать длительной поставки — оперативно оформляем и отправляем заказ.</p>',
         '<p><strong>Работаем официально</strong><br/> Юридическое лицо в России и Казахстане.</p>',
-        '<p><strong>Чеки и документы</strong><br/> Предоставляем чек от магазина и закрывающие документы.</p>',
         '<p><strong>Поддержка на всех этапах</strong><br/> Поможем с выбором техники, оформлением заказа и ответим на вопросы после покупки.</p>',
         ProductDescription.BLANK,
         '<p><strong>🚚 ДОСТАВКА ПО РОССИИ И БЕЛАРУСИ</strong></p>',
         '<p>Отправляем заказы в любой город через:</p>',
-        '<p>▪️ <strong>СДЭК</strong><br/> ▪️ <strong>ПЭК</strong></p>',
-        '<p>Надежно упаковываем технику перед отправкой.</p>',
+        '<p>▪️ <strong>СДЭК</strong><br/> ▪️ <strong>ПЭК</strong><br/> ▪️ <strong>КИТ</strong></p>',
+        '<p>Надежно упаковываем технику перед отправкой и отгружаем в течение трех рабочих дней.</p>',
         ProductDescription.BLANK,
         '<p><strong>💳 ОПЛАТА</strong></p>',
         '<p><strong>Для физических лиц:</strong></p>',
@@ -45,7 +44,7 @@ export class ProductDescription {
         '<p><strong>Для юридических лиц:</strong></p>',
         '<p>▪️ оплата на расчетный счет +12%<br/> ▪️ работаем в рублях и тенге<br/> ▪️ предоставляем закрывающие документы</p>',
         ProductDescription.BLANK,
-        '<p>📩 <strong>Напишите нам или позвоните — проконсультируем, проверим наличие интересующего вас товара!</strong></p>',
+        '<p>📩 <strong>Напишите нам — проконсультируем, проверим наличие интересующего вас товара!</strong></p>',
     ].join(' ');
     // Ключ — GoodsType Avito (уровень 2 снапшота), запасной — Category.
     private static readonly EMOJI: Record<string, string> = {
@@ -123,10 +122,12 @@ export class ProductDescription {
         const html = [
             `<p>${emoji} <strong>${esc(name)} — ${item(b.kind)}.</strong></p>`,
             `<p><strong>${ProductDescription.STOCK_LINE}</strong></p>`,
-            `<p>${item(b.benefit)}</p>`,
             ProductDescription.BLANK,
             `<p><strong>🔥 ${esc(name)}</strong></p>`,
             list('▪️', b.bullets),
+            ProductDescription.BLANK,
+            `<p>${item(b.benefit)}</p>`,
+            ProductDescription.BLANK,
             '<p>Подойдет для:</p>',
             list('✓', b.fits),
             ProductDescription.BLANK,

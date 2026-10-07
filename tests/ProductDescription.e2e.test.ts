@@ -28,11 +28,11 @@ test('e2e: ProductDescription.write — шаблон описания: эмод�
     );
     assert.match(
         ad.html,
-        /<p><strong>🔥 Kawai CA701 B<\/strong><\/p> <p>▪️ [^<]+(<br\/> ▪️ [^<]+){1,5}<\/p> <p>Подойдет для:<\/p> <p>✓ /,
+        /<p><strong>🔥 Kawai CA701 B<\/strong><\/p> <p>▪️ тип: [^<]+(<br\/> ▪️ [^<]+: [^<]+){1,5}<\/p> <p>⠀<\/p> <p>[^<]+<\/p> <p>⠀<\/p> <p>Подойдет для:<\/p> <p>✓ /,
     );
     assert.match(
         ad.html,
-        /ПОЧЕМУ ЗАКАЗЫВАЮТ У НАС[\s\S]*ДОСТАВКА ПО РОССИИ[\s\S]*💳 ОПЛАТА[\s\S]*📩 <strong>Напишите нам/,
+        /ПОЧЕМУ ЗАКАЗЫВАЮТ У НАС[\s\S]*ДОСТАВКА ПО РОССИИ[\s\S]*▪️ <strong>КИТ<\/strong>[\s\S]*💳 ОПЛАТА[\s\S]*📩 <strong>Напишите нам — /,
     );
     assert.doesNotMatch(ad.html, /▪️ ▪️|✓ ✓|<p><\/p>/);
     assert.doesNotMatch(
