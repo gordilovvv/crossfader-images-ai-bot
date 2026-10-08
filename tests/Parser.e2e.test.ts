@@ -42,7 +42,7 @@ test('e2e: Parser — ymusic KAWAI CA701 → факты со страницы [p
 
         assert.equal(result.source.url, YMUSIC);
         assert.match(result.identity.brand, /kawai/i, 'бренд не KAWAI');
-        assert.match(result.identity.model, /ca[\s-]?701/i, 'модель не CA701');
+        assert.match(result.identity.model, /^ca[\s-]?701$/i, 'модель не CA701 или с кодом цвета');
         assert.ok(result.identity.title.length > 0, 'пустой title');
         assert.ok(result.specs.length > 0, 'нет характеристик');
         assertCleanImages(result.images.source, /ydp|rp30|cx102|fifa|logo|banner/i);
@@ -62,6 +62,7 @@ test('e2e: Parser — stepline AUDAC (другой поставщик) [paid]', 
         await saveArtifact('parser-stepline.json', JSON.stringify(result, null, 2));
 
         assert.match(result.identity.brand, /audac/i, 'бренд не AUDAC');
+        assert.match(result.identity.model, /^vexo\s?108$/i, 'модель не VEXO108 или с кодом цвета');
         assertCleanImages(result.images.source, /fifa|logo|banner|ytimg|favicon/i);
         assertDimensions(result.dimensions);
         assertRealDescription(result.description.html, /VEXO|громкоговор|динамик|Вт|мощност/i);

@@ -353,3 +353,29 @@ export function dedupeSpecs(
     }
     return out;
 }
+
+// Коды цвета/отделки в хвосте модели: "CA701 B", "VEXO108/B", "FP-30X BK". Только отдельный токен из известного списка —
+// приклеенные буквы ("SM7B", "P-145B") не трогаем: там это чаще ревизия, чем цвет.
+const COLOR_CODES = new Set(['B', 'BK', 'W', 'WH', 'WE', 'WB', 'WA', 'R', 'EP', 'PE', 'PW']);
+
+// Цикл: двойной код ("LX-1 W/B", "CA701 EP-W") срезаем целиком, а не наполовину.
+export function stripColorSuffix(model: string): string {
+    const m = model.trim().match(/^(.*\d.*?)[\s/-]+([A-Za-z]{1,3})$/);
+    if (!m || !COLOR_CODES.has(m[2]!.toUpperCase())) {
+        return model.trim();
+    }
+    return stripColorSuffix(m[1]!);
+}
+
+export type Dimensions = Extract['dimensions'];
+
+// Downstream считает в см; Gemma иногда отдаёт как на странице ("мм"). Чужая единица — ошибка, а не тихие ×10.
+export function normalizeDimensions(d: Dimensions): Dimensions {
+    const unit = d.unit.trim().replace(/\.$/, '').toLowerCase();
+    const k = /^(mm|мм)$/.test(unit) ? 0.1 : /^(cm|см|)$/.test(unit) ? 1 : null;
+    if (k === null) {
+        throw new Error(`[Parser] неизвестная единица габаритов «${d.unit}»`);
+    }
+    const cm = (v: number) => Math.round(v * k * 10) / 10;
+    return { w: cm(d.w), h: cm(d.h), d: cm(d.d), unit: 'см', weightKg: d.weightKg };
+}

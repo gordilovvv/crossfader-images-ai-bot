@@ -1,6 +1,7 @@
 import { ApiError } from '@google/genai';
 import { ulid } from 'ulid';
 import { ColorsSearch } from './AI/ColorsSearch.ts';
+import { DimensionsSearch } from './AI/DimensionsSearch.ts';
 import { perf, type RefImage } from './AI/Utils.ts';
 import { env } from './environment.ts';
 import { type CardImage, ImageGeneration, type ProductData } from './Image/ImageGeneration.ts';
@@ -40,6 +41,7 @@ export class Bot {
     private readonly browser = new Browser();
     private readonly parser = new Parser(this.browser);
     private readonly colors = new ColorsSearch();
+    private readonly dims = new DimensionsSearch();
     private readonly lookup = new CategoryLookup();
     private readonly images = new ImageGeneration();
     private readonly descriptions = new ProductDescription();
@@ -175,12 +177,14 @@ export class Bot {
         if (!photoUrl) {
             throw new Error('у поставщика нет фото товара');
         }
-        const [photo, colors, category] = await Promise.all([
+        const title = `${parsed.identity.brand} ${parsed.identity.model}`;
+        const [photo, colors, dimensions, category] = await Promise.all([
             Bot.fetchImage(photoUrl),
-            this.colors.search(`${parsed.identity.brand} ${parsed.identity.model}`),
+            this.colors.search(title),
+            this.dims.fill(parsed.dimensions, title),
             this.lookup.classify(parsed),
         ]);
-        const product: ProductData = { ...parsed, colors };
+        const product: ProductData = { ...parsed, dimensions, colors };
         const [cards, description] = await Promise.all([
             this.images.generate(product, photo),
             this.descriptions.write(product, category),

@@ -21,14 +21,14 @@ test('e2e: ProductDescription.write — шаблон описания: эмод�
     );
     await saveArtifact('description-ca701.html', ad.html);
 
-    assert.equal(ad.title, 'Kawai CA701 B');
+    assert.equal(ad.title, 'Kawai CA701');
     assert.match(
         ad.html,
-        /^<p>🎹 <strong>Kawai CA701 B — [а-яё][^<]+\.<\/strong><\/p> <p><strong>Новый, оригинальный/,
+        /^<p>🎹 <strong>Kawai CA701 — [а-яё][^<]+\.<\/strong><\/p> <p><strong>Новый, оригинальный/,
     );
     assert.match(
         ad.html,
-        /<p><strong>🔥 Kawai CA701 B<\/strong><\/p> <p>▪️ тип: [^<]+(<br\/> ▪️ [^<]+: [^<]+){1,5}<\/p> <p>⠀<\/p> <p>[^<]+<\/p> <p>⠀<\/p> <p>Подойдет для:<\/p> <p>✓ /,
+        /<p><strong>🔥 Kawai CA701<\/strong><\/p> <p>▪️ тип: [^<]+(<br\/> ▪️ [^<]+: [^<]+){1,5}<\/p> <p>⠀<\/p> <p>[^<]+<\/p> <p>⠀<\/p> <p>Подойдет для:<\/p> <p>✓ /,
     );
     assert.match(
         ad.html,

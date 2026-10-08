@@ -29,16 +29,19 @@ export class ImageGeneration {
     async generate(product: ProductData, photo: RefImage): Promise<CardImage[]> {
         const start = process.hrtime.bigint();
         try {
-            const prompts = Prompts.build(product);
+            // Без габаритов слот 4 — пустая карточка с одним заголовком; не генерим и не отдаём.
+            const prompts = Prompts.build(product).filter(
+                (card) => card.slot !== 4 || ImageGeneration.hasDimensions(product),
+            );
             const backgrounds = await Promise.all(
                 prompts.map((card) => this.nano.generate(card.prompt, [photo])),
             );
             const builders = [this.card1, this.card2, this.card3, this.card4] as const;
             const cards: CardImage[] = [];
-            for (let i = 0; i < builders.length; i++) {
+            for (let i = 0; i < prompts.length; i++) {
                 const card = prompts[i];
                 const bg = backgrounds[i];
-                const build = builders[i];
+                const build = card && builders[card.slot - 1];
                 if (!card || !bg || !build) {
                     throw new Error(`[ImageGeneration] нет фона для слота ${i + 1}`);
                 }
@@ -55,6 +58,11 @@ export class ImageGeneration {
         } finally {
             await this.graphics.close();
         }
+    }
+
+    static hasDimensions(p: ParsedProduct): boolean {
+        const { w, h, d, weightKg } = p.dimensions;
+        return [w, h, d, weightKg].some((v) => v > 0);
     }
 
     private get brandModel(): (p: ProductData) => string {
@@ -149,11 +157,11 @@ export class ImageGeneration {
         const mm = (cm: number) => String(Math.round(cm * 10));
         const kg = String(d.weightKg).replace('.', ',');
         const bullets = [
-            `Ширина: ${mm(d.w)} мм`,
-            `Высота: ${mm(d.h)} мм`,
-            `Глубина: ${mm(d.d)} мм`,
-            `Вес: ${kg} кг`,
-        ];
+            d.w > 0 && `Ширина: ${mm(d.w)} мм`,
+            d.h > 0 && `Высота: ${mm(d.h)} мм`,
+            d.d > 0 && `Глубина: ${mm(d.d)} мм`,
+            d.weightKg > 0 && `Вес: ${kg} кг`,
+        ].filter((b): b is string => typeof b === 'string');
         const block = Graphics.textBlockBottom(
             Text.headingFlow('Габариты', {
                 ...Style.SLOT4.title,

@@ -8,10 +8,12 @@ import {
     dedupeSpecs,
     Extract,
     type JsonLdProduct,
+    normalizeDimensions,
     parseJsonLdProduct,
     type RawImage,
     type RawSnapshot,
     snapshot,
+    stripColorSuffix,
 } from './Utils.ts';
 
 // document живёт в контексте браузера (page.evaluate); в tsconfig нет DOM-lib.
@@ -85,9 +87,9 @@ export class Parser {
         );
         return {
             source: { url },
-            identity: extract.identity,
+            identity: { ...extract.identity, model: stripColorSuffix(extract.identity.model) },
             specs,
-            dimensions: extract.dimensions,
+            dimensions: normalizeDimensions(extract.dimensions),
             placement: extract.placement,
             contents: extract.contents,
             images: { source: images.slice(0, 10) },

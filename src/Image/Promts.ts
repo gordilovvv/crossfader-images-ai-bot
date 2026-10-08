@@ -42,9 +42,11 @@ export class Prompts {
             'PRODUCT FACTS (internal, never render as text):',
             `kind: ${p.identity.title} (Russian)`,
             `model: ${p.identity.brand} ${p.identity.model}`.trim(),
-            `size: ${w}×${h}×${d} cm (W×H×D) — ${anchor}`,
-            `weight: ${weightKg} kg`,
+            w > 0 && h > 0 && d > 0 && `size: ${w}×${h}×${d} cm (W×H×D) — ${anchor}`,
+            weightKg > 0 && `weight: ${weightKg} kg`,
             `placement: ${p.placement}`,
-        ].join('\n');
+        ]
+            .filter((line): line is string => typeof line === 'string')
+            .join('\n');
     }
 }

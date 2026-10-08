@@ -74,3 +74,28 @@ test('e2e: ImageGeneration — настенная колонка (wall) → 5 к
     );
     await assertCards('audac', cards, [1, 2, 3, 4, 5]);
 });
+
+test('e2e: ImageGeneration — без габаритов → слот 4 не генерится и не отдаётся', async () => {
+    const product = fixture('product-audac');
+    product.dimensions = { w: 0, h: 0, d: 0, unit: 'см', weightKg: 0 };
+    const gen = new ImageGeneration();
+    const heroBg = readFileSync(new URL('./fixtures/hero-bg-audac.png', import.meta.url));
+    const bg = photo('raw-audac.png').bytes;
+    let nanoCalls = 0;
+    // NanoBanano подменяем: проверяем логику слотов, а не генерацию фонов (слот 1 требует жёлтый фон)
+    (gen as unknown as { nano: { generate: () => Promise<Buffer> } }).nano = {
+        generate: async () => (++nanoCalls === 1 ? heroBg : bg),
+    };
+
+    const { result: cards } = await measure('generate без габаритов', () =>
+        gen.generate(product, photo('raw-audac.png')),
+    );
+
+    await assertCards('nodims', cards, [1, 2, 3, 5]);
+    assert.equal(nanoCalls, 3, 'фон для слота 4 не должен генериться');
+    assert.doesNotMatch(
+        Prompts.build(product)[1]!.prompt,
+        /size:|weight:/,
+        'нулевые факты в промте',
+    );
+});

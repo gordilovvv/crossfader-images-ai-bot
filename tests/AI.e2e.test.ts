@@ -5,9 +5,10 @@ import type { GenerateContentResponse } from '@google/genai';
 import { z } from 'zod';
 import { Classification } from '../src/AI/Classification.ts';
 import { ColorsSearch } from '../src/AI/ColorsSearch.ts';
+import { DimensionsSearch } from '../src/AI/DimensionsSearch.ts';
 import { Gemma } from '../src/AI/Gemma4.ts';
 import { NanoBanano } from '../src/AI/NanoBanano.ts';
-import { extractImage, extractText, parseFirstJson } from '../src/AI/Utils.ts';
+import { extractImage, extractText, genai, parseFirstJson } from '../src/AI/Utils.ts';
 import { imageExt, measure, saveArtifact } from './helpers/e2e.ts';
 
 test('e2e: Classification — крупный товар → big [paid]', async () => {
@@ -117,4 +118,45 @@ test('e2e: NanoBanano — генерит картинку [paid]', async () => {
     const ext = imageExt(result);
     assert.ok(ext, 'ответ не PNG/JPEG');
     await saveArtifact(`ai-nano-apple.${ext}`, result);
+});
+
+test('e2e: DimensionsSearch — у поставщика нулей нет → ищет в сети [paid]', async () => {
+    const zero = { w: 0, h: 0, d: 0, unit: 'см', weightKg: 0 };
+    const { result } = await measure('dimensions DAS Monitor-4', () =>
+        new DimensionsSearch().fill(zero, 'DAS AUDIO MONITOR-4'),
+    );
+    // Официальные 246×152×175 мм (H×W×D), 4.15 кг — оси по подписям, не по порядку
+    const expected = { w: 15.2, h: 24.6, d: 17.5, weightKg: 4.15 };
+    for (const k of ['w', 'h', 'd', 'weightKg'] as const) {
+        assert.ok(
+            Math.abs(result[k] - expected[k]) <= expected[k] * 0.1,
+            `${k}=${result[k]}, ожидалось ≈${expected[k]}`,
+        );
+    }
+    assert.equal(result.unit, 'см');
+});
+
+test('e2e: DimensionsSearch — дозаполняет только нулевые поля [paid]', async () => {
+    const partial = { w: 145, h: 97, d: 49.5, unit: 'см', weightKg: 0 };
+    const { result } = await measure('dimensions Kawai CA701 weight', () =>
+        new DimensionsSearch().fill(partial, 'Kawai CA701'),
+    );
+    assert.deepEqual({ w: result.w, h: result.h, d: result.d }, { w: 145, h: 97, d: 49.5 });
+    assert.ok(
+        result.weightKg >= 60 && result.weightKg <= 95,
+        `вес ${result.weightKg} кг не похож на CA701`,
+    );
+});
+
+test('e2e: DimensionsSearch — полные габариты → без вызова', async () => {
+    const full = { w: 24.4, h: 42.5, d: 25.6, unit: 'см', weightKg: 9.4 };
+    const original = genai.models.generateContent;
+    genai.models.generateContent = async () => {
+        throw new Error('сетевой вызов при полных габаритах');
+    };
+    try {
+        assert.deepEqual(await new DimensionsSearch().fill(full, 'Audac VEXO108'), full);
+    } finally {
+        genai.models.generateContent = original;
+    }
 });
