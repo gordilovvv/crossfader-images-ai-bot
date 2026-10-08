@@ -61,11 +61,11 @@ export class ImageGeneration {
         return (p) => `${p.identity.brand} ${p.identity.model}`.trim();
     }
 
-    /** Обложка: жёлтый фон, товар в нижних 2/3, заголовок сверху, лого+бейджи снизу, бренд+флаг справа. */
+    /** Обложка: жёлтый фон, заголовок сверху, товар в полосе между ним и нижним рядом лого+бейджи, флаг справа. */
     private async card1(p: ProductData, bg: Buffer): Promise<Buffer> {
         const s1 = Style.SLOT1;
         const inner = [
-            Graphics.bg(bg, true),
+            Graphics.bg(bg),
             Graphics.plusCorners(s1.cornerPlusInset),
             Text.heading(p.identity.title, {
                 top: s1.caption.top,
@@ -88,10 +88,9 @@ export class ImageGeneration {
                 s1.badges.h,
                 s1.badges.gap,
             ),
-            Graphics.brandCountryCorner(
-                p.identity.brand,
+            Graphics.flagCorner(
                 p.identity.country,
-                `right:${s1.corner.right}px;bottom:${s1.corner.bottom}px`,
+                `right:${s1.flag.right}px;bottom:${s1.flag.bottom}px`,
             ),
         ].join('');
         return this.graphics.render(inner, 'hero');

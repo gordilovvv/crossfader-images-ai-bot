@@ -70,8 +70,8 @@ export class Graphics {
     }
 
     /**
-     * inner — слои внутри #stage. mode 'hero' — залить #stage цветом фона AI-картинки и уложить
-     * bbox товара (он на сплошном жёлтом) в зону под заголовком, стабильно при любом кадрировании модели.
+     * inner — слои внутри #stage. mode 'hero' — подтянуть жёлтый фон AI-картинки к цвету лого и уложить
+     * bbox товара в полосу между заголовком и нижним рядом, стабильно при любом кадрировании модели.
      */
     async render(inner: string, mode: 'plain' | 'hero' = 'plain'): Promise<Buffer> {
         const page = await this.ready();
@@ -100,23 +100,50 @@ export class Graphics {
                         return;
                     }
                     ctx.drawImage(img, 0, 0);
-                    const px = ctx.getImageData(0, 0, nw, nh).data;
-                    const bg = [px[0], px[1], px[2]];
-                    doc.querySelector('#stage').style.background =
-                        `rgb(${bg[0]},${bg[1]},${bg[2]})`;
-                    // bbox товара = пиксели, заметно отличные от фона
+                    const data = ctx.getImageData(0, 0, nw, nh);
+                    const px = data.data;
+                    // Цвет фона = медиана по рамке кадра (один пиксель хрупок: артефакт JPEG, край товара).
+                    const ring: number[] = [];
+                    for (let k = 0; k < nw; k += 4) {
+                        ring.push(
+                            k * 4,
+                            ((nh - 1) * nw + k) * 4,
+                            k * nw * 4,
+                            (k * nw + nw - 1) * 4,
+                        );
+                    }
+                    const median = (ch: number) =>
+                        ring.map((i) => px[i + ch] ?? 0).sort((a, b) => a - b)[ring.length >> 1] ??
+                        0;
+                    const bg = [median(0), median(1), median(2)] as const;
+                    const bgDiff =
+                        Math.abs(bg[0] - hero.bg[0]) +
+                        Math.abs(bg[1] - hero.bg[1]) +
+                        Math.abs(bg[2] - hero.bg[2]);
+                    if (bgDiff > hero.tol.none) {
+                        throw new Error(
+                            `[Graphics] hero: фон модели не жёлтый rgb(${bg.join(',')})`,
+                        );
+                    }
+                    const [dr, dg, db] = [
+                        hero.bg[0] - bg[0],
+                        hero.bg[1] - bg[1],
+                        hero.bg[2] - bg[2],
+                    ];
+                    const span = hero.tol.none - hero.tol.full;
+                    // Фон модели дрейфует по оттенку: пиксели, близкие к фону, тянем к цвету лого; bbox = остальное.
                     let minX = nw;
                     let minY = nh;
                     let maxX = 0;
                     let maxY = 0;
-                    for (let y = 0; y < nh; y += 2) {
-                        for (let x = 0; x < nw; x += 2) {
+                    for (let y = 0; y < nh; y++) {
+                        for (let x = 0; x < nw; x++) {
                             const i = (y * nw + x) * 4;
                             const diff =
                                 Math.abs(px[i] - bg[0]) +
                                 Math.abs(px[i + 1] - bg[1]) +
                                 Math.abs(px[i + 2] - bg[2]);
-                            if (diff > 90) {
+                            if (diff > hero.tol.none) {
                                 if (x < minX) {
                                     minX = x;
                                 }
@@ -129,25 +156,48 @@ export class Graphics {
                                 if (y > maxY) {
                                     maxY = y;
                                 }
+                                continue;
                             }
+                            if (diff <= hero.tol.full) {
+                                px[i] = hero.bg[0];
+                                px[i + 1] = hero.bg[1];
+                                px[i + 2] = hero.bg[2];
+                                continue;
+                            }
+                            const w = (hero.tol.none - diff) / span;
+                            px[i] += dr * w;
+                            px[i + 1] += dg * w;
+                            px[i + 2] += db * w;
                         }
                     }
-                    const bw = Math.max(1, maxX - minX);
-                    const bh = Math.max(1, maxY - minY);
-                    // Уложить bbox товара: центр по X, низ на bottomY, размер в пределах maxW×maxH
-                    const scale = Math.min(hero.maxW / bw, hero.maxH / bh);
+                    ctx.putImageData(data, 0, 0);
+                    doc.querySelector('#stage').style.background =
+                        `rgb(${hero.bg[0]},${hero.bg[1]},${hero.bg[2]})`;
+                    const bw = maxX - minX;
+                    const bh = maxY - minY;
+                    if (bw < nw * 0.05 || bh < nh * 0.05) {
+                        throw new Error(
+                            `[Graphics] hero: товар не найден на фоне (bbox ${bw}×${bh})`,
+                        );
+                    }
+                    if (bw > nw * 0.97 && bh > nh * 0.97) {
+                        throw new Error(
+                            '[Graphics] hero: товар занимает весь кадр, фон не отделить',
+                        );
+                    }
+                    // Уложить bbox товара: вписать в maxW×(bottom-top), центр полосы по X и Y
+                    const scale = Math.min(hero.maxW / bw, (hero.bottom - hero.top) / bh);
                     const tx = (hero.canvas - bw * scale) / 2;
-                    const ty = hero.bottomY - bh * scale;
-                    img.style.width = `${nw * scale}px`;
-                    img.style.height = 'auto';
-                    img.style.left = `${tx - minX * scale}px`;
-                    img.style.top = `${ty - minY * scale}px`;
-                    img.style.transform = 'none';
+                    const ty = hero.top + (hero.bottom - hero.top - bh * scale) / 2;
+                    c.style.cssText = `position:absolute;width:${nw * scale}px;height:${nh * scale}px;left:${tx - minX * scale}px;top:${ty - minY * scale}px`;
+                    img.replaceWith(c);
                 },
                 {
+                    top: Style.HERO.top,
+                    bottom: Style.HERO.bottom,
                     maxW: Style.HERO.maxW,
-                    maxH: Style.HERO.maxH,
-                    bottomY: Style.HERO.bottomY,
+                    tol: Style.HERO.bgTolerance,
+                    bg: Graphics.rgb(Style.COLOR.yellow),
                     canvas: Graphics.SIZE,
                 },
             );
@@ -192,7 +242,8 @@ ${Graphics.fontFaceCss()}
 html,body{width:${Graphics.SIZE}px;height:${Graphics.SIZE}px}
 #stage{position:relative;width:${Graphics.SIZE}px;height:${Graphics.SIZE}px;overflow:hidden;background:#000;font-family:Onest,sans-serif;-webkit-font-smoothing:antialiased}
 #stage .bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
-#stage .badge svg,#stage .logo svg,#stage .flag svg,#stage .plus svg{display:block;width:100%;height:auto}
+#stage .logo svg,#stage .plus svg{display:block;width:100%;height:auto}
+#stage .badge svg,#stage .flag svg{display:block;width:auto;height:100%}
 </style></head><body><div id="stage">${inner}</div></body></html>`;
     }
 
@@ -203,12 +254,9 @@ html,body{width:${Graphics.SIZE}px;height:${Graphics.SIZE}px}
         }).join('\n');
     }
 
-    /** Фон-слой из AI-картинки. hero — товар в нижних 2/3, верх добираем заливкой (см. sampleBg). */
-    static bg(photo: Buffer, hero = false): string {
-        const uri = imageDataUri(photo);
-        // hero: реальную укладку товара делает render(mode:'hero') по bbox; тут только базовое позиционирование.
-        const style = hero ? 'position:absolute;bottom:0;left:0;object-fit:contain' : '';
-        return `<img class="bg" src="${uri}"${style ? ` style="${style}"` : ''}>`;
+    /** Фон-слой из AI-картинки. */
+    static bg(photo: Buffer): string {
+        return `<img class="bg" src="${imageDataUri(photo)}">`;
     }
 
     /** Тёмный градиент снизу под читаемость текста. top — верх зоны затемнения (px), max — плотность 0..1. */
@@ -232,16 +280,21 @@ html,body{width:${Graphics.SIZE}px;height:${Graphics.SIZE}px}
         return `<div id="txtblock" style="position:absolute;left:${Style.PAD.x}px;right:${Style.PAD.x}px;bottom:${Style.PAD.bottom}px">${inner}</div>`;
     }
 
-    /** Плюсики по 4 углам, нижние приглушены. */
-    static plusCorners(inset = 40): string {
-        const one = (pos: string, op: number) =>
-            `<span class="plus" style="position:absolute;${pos};width:${Style.SLOT1.plusWidth}px;opacity:${op}">${Graphics.PLUS_SVG}</span>`;
+    /** Плюсики по 4 углам. */
+    static plusCorners(inset: number): string {
+        const one = (pos: string) =>
+            `<span class="plus" style="position:absolute;${pos};width:${Style.SLOT1.plusWidth}px">${Graphics.PLUS_SVG}</span>`;
         return [
-            one(`top:${inset}px;left:${inset}px`, 1),
-            one(`top:${inset}px;right:${inset}px`, 1),
-            one(`bottom:${inset}px;left:${inset}px`, 0.35),
-            one(`bottom:${inset}px;right:${inset}px`, 0.35),
+            one(`top:${inset}px;left:${inset}px`),
+            one(`top:${inset}px;right:${inset}px`),
+            one(`bottom:${inset}px;left:${inset}px`),
+            one(`bottom:${inset}px;right:${inset}px`),
         ].join('');
+    }
+
+    static rgb(hex: string): [number, number, number] {
+        const n = Number.parseInt(hex.slice(1), 16);
+        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
     }
 
     /** Жёлтая плашка-лого — контрастна на любом фоне (жёлтый бренда + чёрный текст). */
@@ -249,24 +302,22 @@ html,body{width:${Graphics.SIZE}px;height:${Graphics.SIZE}px}
         return `<span class="logo" style="position:absolute;${pos};width:${width}px">${Graphics.LOGO_SVG}</span>`;
     }
 
-    static badgesRow(pos: string, height = 70, gap = 24): string {
+    static badgesRow(pos: string, height: number, gap: number): string {
         const badges = Graphics.BADGES.map(
             (svg) => `<span class="badge" style="height:${height}px">${svg}</span>`,
         ).join('');
         return `<div class="badges" style="position:absolute;${pos};display:flex;align-items:center;gap:${gap}px">${badges}</div>`;
     }
 
-    /** Правый нижний угол карточки 1: белая полоса с брендом + прямоугольный флаг (без скруглений/плашки). Неизвестная страна -> только бренд-полоса. */
-    static brandCountryCorner(brand: string, country: string, pos: string): string {
+    /** Правый нижний угол карточки 1: прямоугольный флаг страны. Неизвестная страна -> ничего. */
+    static flagCorner(country: string, pos: string): string {
         const entry = Countries.resolve(country);
-        const flag = entry
-            ? `<span class="flag" style="display:block;line-height:0">${readAsset(`flags/${entry.iso}.svg`).toString('utf8')}</span>`
-            : '';
-        const c = Style.SLOT1.corner;
-        return `<div style="position:absolute;${pos};width:${c.width}px">
-<div style="background:#fff;text-align:center;font-weight:800;font-size:${c.fontSize}px;letter-spacing:${c.letterSpacing}px;color:${Graphics.BLACK};padding:${c.padY}px ${c.padX}px">${brand.toUpperCase()}</div>
-${flag}
-</div>`;
+        if (!entry) {
+            return '';
+        }
+        const f = Style.SLOT1.flag;
+        const inner = f.h - 2 * f.frame;
+        return `<span class="flag" style="position:absolute;${pos};height:${f.h}px;width:${Math.round((inner * 4) / 3) + 2 * f.frame}px;padding:${f.frame}px;background:#fff;line-height:0">${readAsset(`flags/${entry.iso}.svg`).toString('utf8')}</span>`;
     }
 
     /** Статичная общая карточка 5 — готовый ассет, ничего не рендерим. */

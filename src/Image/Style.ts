@@ -52,11 +52,12 @@ export class Style {
     // Динамический градиент (слот 4): start = blockTop - offset, но не выше floor.
     static readonly GRADIENT = { offset: Style.px(120), floor: Style.px(480) } as const;
 
-    // Hero-укладка bbox товара (слот 1): вписать в maxW×maxH, центр по X, низ на bottomY.
+    // Hero (слот 1): bbox товара вписать в полосу между заголовком и нижним рядом, центр по X и Y.
     static readonly HERO = {
-        maxW: Style.px(1080),
-        maxH: Style.px(800),
-        bottomY: Style.px(1180),
+        top: Style.px(300),
+        bottom: Style.px(916),
+        maxW: Style.px(1056),
+        bgTolerance: { full: 40, none: 90 },
     } as const;
 
     // Лого справа-сверху — общий для слотов 2/3/4.
@@ -117,6 +118,9 @@ export class Style {
         } as TextStyle,
     };
 
+    // Высота нижнего ряда обложки: бейджи и флаг одной высоты, на одной линии.
+    private static readonly BOTTOM_ROW_H = Style.px(75);
+
     static readonly SLOT1 = {
         cornerPlusInset: Style.px(40),
         plusWidth: Style.px(28),
@@ -124,26 +128,28 @@ export class Style {
             size: Style.px(56),
             weight: 700,
             letterSpacing: Style.px(1),
-            top: Style.px(120),
+            top: Style.px(66),
             maxWidth: Style.px(1000),
         } as const,
         brand: {
             size: Style.px(112),
             weight: 900,
-            top: Style.px(198),
+            top: Style.px(144),
             maxWidth: Style.px(1080),
         } as const,
         logo: { left: Style.px(72), bottom: Style.px(160), width: Style.px(240) },
-        badges: { left: Style.px(72), bottom: Style.px(72), h: Style.px(64), gap: Style.px(16) },
-        // Правый нижний угол: белая полоса бренда + флаг.
-        corner: {
+        badges: {
+            left: Style.px(72),
+            bottom: Style.px(72),
+            h: Style.BOTTOM_ROW_H,
+            gap: Style.px(16),
+        },
+        // Правый нижний угол: флаг 4:3 в белой рамке по линии и высоте бейджей (рамка — чтобы жёлтые полосы не тонули в фоне).
+        flag: {
             right: Style.px(72),
             bottom: Style.px(72),
-            width: Style.px(120),
-            fontSize: Style.px(24),
-            letterSpacing: Style.px(2),
-            padY: Style.px(7),
-            padX: Style.px(4),
+            h: Style.BOTTOM_ROW_H,
+            frame: Style.px(4),
         },
     };
 
