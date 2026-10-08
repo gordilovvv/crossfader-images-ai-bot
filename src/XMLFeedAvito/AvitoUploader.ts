@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { perf } from '../AI/Utils.ts';
-import { type AutoloadItem, type AutoloadReport, AvitoApi, type ReportStats } from './AvitoApi.ts';
+import { AvitoApi } from './api/AvitoApi.ts';
+import type { AutoloadItem, AutoloadReport, ReportStats } from './api/Schemas.ts';
 import { S3 } from './S3.ts';
 
 // errors — только объявления плана из раздела ошибок отчёта.

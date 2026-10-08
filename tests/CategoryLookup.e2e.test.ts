@@ -4,11 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { Gemma } from '../src/AI/Gemma4.ts';
+import type { Listing } from '../src/Bot.ts';
 import type { ParsedProduct } from '../src/Parser/Parser.ts';
-import type { CategoryNode, NodeFields } from '../src/XMLFeedAvito/AvitoApi.ts';
+import type { AvitoProducts } from '../src/XMLFeedAvito/AvitoProducts.ts';
+import type { CategoryNode, NodeFields } from '../src/XMLFeedAvito/api/Schemas.ts';
 import { CategoryLookup } from '../src/XMLFeedAvito/CategoryLookup.ts';
 import { CategorySnapshot, type Snapshot } from '../src/XMLFeedAvito/CategorySnapshot.ts';
-import { measure } from './helpers/e2e.ts';
+import { XMLBuilder } from '../src/XMLFeedAvito/XMLBuilder.ts';
+import { measure, saveArtifact } from './helpers/e2e.ts';
 
 const fixture = (name: string) =>
     JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'));
@@ -211,6 +214,12 @@ const KNOWN_LIMITATIONS: Record<string, string> = {
 // Товары, чей верный лист Avito НЕ имеет поля Brand (аксессуары, ударные, микрофоны) — Brand не должен проставляться.
 const BRANDLESS = new Set(['Yamaha L-200', 'Sabian SBR5002 2-pack', 'Sennheiser XSW 1-CI1-B(A)']);
 
+// Оракул неприменим: бренда (или его написания) нет в справочнике выбранного листа → по правилу «Другой».
+const BRAND_OVERRIDE: Record<string, string> = {
+    'Medeli AP33': 'Другой',
+    'Radial Pro48': 'Другой',
+};
+
 for (const [name, product] of Object.entries(traps)) {
     const opts = KNOWN_LIMITATIONS[name] ? { todo: KNOWN_LIMITATIONS[name] } : {};
     test(`e2e: CategoryLookup — "${name}" → категория Avito [paid]`, opts, async () => {
@@ -237,14 +246,181 @@ for (const [name, product] of Object.entries(traps)) {
                 'Brand не должен ставиться для категории без поля Brand',
             );
         } else {
-            assert.equal(
-                result.attrs.Brand,
-                product.identity.brand,
-                'Brand passthrough отсутствует/неверен',
+            // Brand обязан быть значением справочника Avito этого листа; где оракул (боевой фид) знает бренд — ровно он.
+            assert.ok(
+                brandsOf(result.slug).includes(result.attrs.Brand as string),
+                `Brand "${result.attrs.Brand}" нет в справочнике ${result.slug}`,
             );
+            const expectedBrand = BRAND_OVERRIDE[name] ?? expected.attrs.Brand;
+            if (expectedBrand) {
+                assert.equal(result.attrs.Brand, expectedBrand, 'неверный Brand');
+            }
         }
     });
 }
+
+// Резолв Brand по справочнику листа: Avito принимает только значения из своего каталога (иначе «Неправильно заполнен обязательный параметр — Бренд»).
+const BRAND_CASES: Array<[raw: string, expected: string]> = [
+    ['DAS AUDIO', 'Другой'],
+    ['yamaha', 'Yamaha'],
+    ['Allen & Heath', 'Allen&Heath'],
+    ['', 'Без бренда'],
+];
+for (const [raw, expected] of BRAND_CASES) {
+    test(`e2e: CategoryLookup — Brand "${raw}" → "${expected}" по справочнику листа`, async () => {
+        const product = {
+            ...(fixture('product-ca701.json') as ParsedProduct),
+            identity: { title: 'студийный монитор', brand: raw, model: 'M-4', country: '' },
+        };
+        const snapshot = snap(
+            [
+                {
+                    name: 'Хобби',
+                    nested: [{ name: 'Музыка', nested: [{ name: 'Звук', slug: 'zvuk' }] }],
+                },
+            ],
+            { zvuk: brandLeaf('cat_zvuk') },
+            { cat_zvuk: ['Yamaha', 'Allen&Heath', 'CAD Audio', 'Без бренда', 'Другой'] },
+        );
+        const result = await new CategoryLookup(snapshot, pickFirst()).classify(product);
+        assert.equal(result.attrs.Brand, expected);
+    });
+}
+
+test('e2e: CategoryLookup — необязательный Brand (required: false) всё равно резолвится по справочнику', async () => {
+    const product = {
+        ...(fixture('product-ca701.json') as ParsedProduct),
+        identity: { title: 'студийный монитор', brand: 'yamaha', model: 'M-4', country: '' },
+    };
+    const leaf = brandLeaf('cat_zvuk');
+    const brandField = leaf.fields.find((f) => f.tag === 'Brand')?.content?.[0];
+    assert.ok(brandField);
+    brandField.required = false;
+    const snapshot = snap(
+        [{ name: 'Хобби', nested: [{ name: 'Музыка', nested: [{ name: 'Звук', slug: 'zvuk' }] }] }],
+        { zvuk: leaf },
+        { cat_zvuk: ['Yamaha', 'Без бренда', 'Другой'] },
+    );
+    const result = await new CategoryLookup(snapshot, pickFirst()).classify(product);
+    assert.equal(result.attrs.Brand, 'Yamaha');
+});
+
+// Фоллбэк строго по смыслу: реальный бренд → только «Другой», пустой → только «Без бренда». Подмена одного другим — ложные данные в фиде.
+test('e2e: CategoryLookup — бренда нет в справочнике, «Другой» там тоже нет → fail-fast (throw)', async () => {
+    const product = fixture('product-ca701.json') as ParsedProduct;
+    const snapshot = snap(
+        [{ name: 'Хобби', nested: [{ name: 'Музыка', nested: [{ name: 'Звук', slug: 'zvuk' }] }] }],
+        { zvuk: brandLeaf('cat_zvuk') },
+        { cat_zvuk: ['Yamaha', 'Без бренда'] },
+    );
+    await assert.rejects(
+        () => new CategoryLookup(snapshot, pickFirst()).classify(product),
+        /«Другой» там тоже нет/,
+    );
+});
+
+test('e2e: CategoryLookup — пустой бренд, «Без бренда» в справочнике нет → fail-fast (throw)', async () => {
+    const product = {
+        ...(fixture('product-ca701.json') as ParsedProduct),
+        identity: { title: 'монитор', brand: '', model: '', country: '' },
+    };
+    const snapshot = snap(
+        [{ name: 'Хобби', nested: [{ name: 'Музыка', nested: [{ name: 'Звук', slug: 'zvuk' }] }] }],
+        { zvuk: brandLeaf('cat_zvuk') },
+        { cat_zvuk: ['Yamaha', 'Другой'] },
+    );
+    await assert.rejects(
+        () => new CategoryLookup(snapshot, pickFirst()).classify(product),
+        /«Без бренда» там тоже нет/,
+    );
+});
+
+test('e2e: CategoryLookup — коллизия нормализации (GAP/Gap): точное совпадение без учёта регистра, иначе throw', async () => {
+    const tree = [
+        { name: 'Хобби', nested: [{ name: 'Музыка', nested: [{ name: 'Звук', slug: 'zvuk' }] }] },
+    ];
+    const brands = { cat_zvuk: ['G.A.P.', 'Gap', 'Другой'] };
+    const withBrand = (brand: string) => ({
+        ...(fixture('product-ca701.json') as ParsedProduct),
+        identity: { title: 'x', brand, model: '', country: '' },
+    });
+    const lookup = new CategoryLookup(
+        snap(tree, { zvuk: brandLeaf('cat_zvuk') }, brands),
+        pickFirst(),
+    );
+    assert.equal((await lookup.classify(withBrand('GAP'))).attrs.Brand, 'Gap');
+    await assert.rejects(() => lookup.classify(withBrand('g-a-p')), /неоднозначен/);
+});
+
+// Интеграция на реальном листе Avito: справочник zvukovoe из настоящего снапшота → Brand «Другой» → XMLBuilder пишет его в фид.
+test('e2e: CategoryLookup+XMLBuilder — DAS AUDIO на реальном листе zvukovoe → <Brand>Другой</Brand>', async () => {
+    const real = realSnapshot();
+    const leaf = real.fields.zvukovoe_i_dj_oborudovanie as NodeFields;
+    const product = {
+        ...(fixture('product-ca701.json') as ParsedProduct),
+        identity: {
+            title: 'студийный монитор',
+            brand: 'DAS AUDIO',
+            model: 'MONITOR-4',
+            country: '',
+        },
+    };
+    const snapshot = snap(
+        [
+            {
+                name: 'Хобби',
+                nested: [{ name: 'Музыка', nested: [{ name: 'Звук', slug: leaf.node.slug }] }],
+            },
+        ],
+        { [leaf.node.slug]: leaf },
+        real.brands,
+    );
+    const gemma = {
+        askJson: async (prompt: string) =>
+            prompt.includes('КАНДИДАТЫ')
+                ? { id: 1, attrs: { EquipmentType: 'Студийные мониторы' } }
+                : { ids: [1] },
+    } as unknown as Gemma;
+    const category = await new CategoryLookup(snapshot, gemma).classify(product);
+    assert.equal(category.attrs.Brand, 'Другой');
+
+    const xml = XMLBuilder.build({ items: [] } as unknown as AvitoProducts, [
+        {
+            id: 1,
+            url: 'https://example-supplier.ru/das-audio-monitor-4',
+            product: product as unknown as Listing['product'],
+            category,
+            description: { title: 'DAS Audio Monitor-4', html: '<p>Студийный монитор.</p>' },
+            cards: [],
+            imageUrls: ['https://example.com/1.png'],
+            price: 45_000,
+            existing: null,
+        },
+    ]);
+    assert.match(xml, /<Brand>Другой<\/Brand>/);
+    assert.match(xml, /<EquipmentType>Студийные мониторы<\/EquipmentType>/);
+    await saveArtifact('brand-check-drugoi.xml', xml);
+});
+
+test('e2e: CategorySnapshot — Brand-лист без справочника (нет каталога / каталог не в brands) → fail-fast инвариант (throw)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'catsnap-'));
+    const tree = [{ name: 'Звук', slug: 'zvuk' }];
+    const noKey = join(dir, 'no-key.json');
+    writeFileSync(
+        noKey,
+        JSON.stringify({ tree, fields: { zvuk: brandLeaf('cat_zvuk') }, brands: {} }),
+    );
+    assert.throws(() => CategorySnapshot.loadFile(noKey), /нет справочника брендов/);
+
+    const noCatalog = join(dir, 'no-catalog.json');
+    const leaf = brandLeaf('cat_zvuk');
+    delete leaf.fields[1]?.content?.[0]?.catalog;
+    writeFileSync(
+        noCatalog,
+        JSON.stringify({ tree, fields: { zvuk: leaf }, brands: { cat_zvuk: ['Yamaha'] } }),
+    );
+    assert.throws(() => CategorySnapshot.loadFile(noCatalog), /нет справочника брендов/);
+});
 
 test('e2e: CategoryLookup — лист не подошёл (id=0) → fail-fast (throw)', async () => {
     const product = fixture('product-ca701.json') as ParsedProduct;
@@ -268,12 +444,16 @@ test('e2e: CategoryLookup — дискриминатор вне enum узла �
     const fields: NodeFields = {
         node: { name: 'Гитары', slug: 'g' },
         fields: [
-            { tag: 'Category', content: [{ values: [{ value: 'Музыкальные инструменты' }] }] },
+            {
+                tag: 'Category',
+                content: [{ required: true, values: [{ value: 'Музыкальные инструменты' }] }],
+            },
             {
                 tag: 'GuitarType',
                 content: [
                     {
                         field_type: 'select',
+                        required: true,
                         values: [{ value: 'Классическая' }, { value: 'Электрогитара' }],
                     },
                 ],
@@ -297,11 +477,95 @@ test('e2e: CategoryLookup — дискриминатор вне enum узла �
     );
 });
 
+// Необязательные общие поля Avito (Color, Promo…) — не дискриминаторы: модель их не заполняет, в attrs они не попадают.
+test('e2e: CategoryLookup — необязательное select-поле (required: false) не требуется и не попадает в attrs', async () => {
+    const product = fixture('product-ca701.json') as ParsedProduct;
+    const fields: NodeFields = {
+        node: { name: 'Гитары', slug: 'g' },
+        fields: [
+            {
+                tag: 'Category',
+                content: [{ required: true, values: [{ value: 'Музыкальные инструменты' }] }],
+            },
+            {
+                tag: 'GuitarType',
+                content: [
+                    {
+                        field_type: 'select',
+                        required: true,
+                        values: [{ value: 'Классическая' }, { value: 'Электрогитара' }],
+                    },
+                ],
+            },
+            {
+                tag: 'Color',
+                content: [
+                    {
+                        field_type: 'select',
+                        required: false,
+                        values: [{ value: 'Чёрный' }, { value: 'Белый' }],
+                    },
+                ],
+            },
+        ],
+    };
+    const snapshot = snap(
+        [{ name: 'Хобби', nested: [{ name: 'Музыка', nested: [{ name: 'Гитары', slug: 'g' }] }] }],
+        { g: fields },
+    );
+    let finePrompt = '';
+    const gemma = {
+        askJson: async (prompt: string) => {
+            if (!prompt.includes('КАНДИДАТЫ')) {
+                return { ids: [1] };
+            }
+            finePrompt = prompt;
+            return { id: 1, attrs: { GuitarType: 'Электрогитара' } };
+        },
+    } as unknown as Gemma;
+
+    const result = await new CategoryLookup(snapshot, gemma).classify(product);
+    assert.deepEqual(result.attrs, { GuitarType: 'Электрогитара' });
+    assert.ok(!finePrompt.includes('Color'), 'необязательное поле Color попало в кандидаты модели');
+});
+
 test('e2e: CategorySnapshot — пустой/битый снапшот → fail-fast (throw)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'catsnap-'));
-    const path = join(dir, 'empty.json');
-    writeFileSync(path, JSON.stringify({ tree: [], fields: {} }));
-    assert.throws(() => CategorySnapshot.loadFile(path), /пустой или битый/);
+    const empty = join(dir, 'empty.json');
+    writeFileSync(empty, JSON.stringify({ tree: [], fields: {}, brands: {} }));
+    assert.throws(() => CategorySnapshot.loadFile(empty), /пустой или битый/);
+    // Структурно битый: справочник брендов строкой, а не списком.
+    const broken = join(dir, 'broken.json');
+    writeFileSync(
+        broken,
+        JSON.stringify({
+            tree: [{ name: 'Звук', slug: 'zvuk' }],
+            fields: { zvuk: brandLeaf('c') },
+            brands: { c: 'Yamaha' },
+        }),
+    );
+    assert.throws(() => CategorySnapshot.loadFile(broken), /пустой или битый/);
+    // Снапшот прошлого формата: без brands и без required у полей.
+    const legacy = join(dir, 'legacy.json');
+    writeFileSync(
+        legacy,
+        JSON.stringify({
+            tree: [{ name: 'Звук', slug: 'zvuk' }],
+            fields: {
+                zvuk: {
+                    node: { name: 'Звук', slug: 'zvuk' },
+                    fields: [
+                        {
+                            tag: 'Category',
+                            content: [{ values: [{ value: 'Музыкальные инструменты' }] }],
+                        },
+                        { tag: 'Brand', content: [{ field_type: 'select', is_catalog: true }] },
+                    ],
+                },
+            },
+        }),
+    );
+    assert.throws(() => CategorySnapshot.loadFile(legacy), /пустой или битый снапшот/);
 });
 
 test('e2e: CategorySnapshot — лист дерева без полей → fail-fast инвариант (throw)', () => {
@@ -313,19 +577,24 @@ test('e2e: CategorySnapshot — лист дерева без полей → fail
         JSON.stringify({
             tree: [{ name: 'Гитары', slug: 'g' }],
             fields: { other: leafFields('X') },
+            brands: {},
         }),
     );
     assert.throws(() => CategorySnapshot.loadFile(path), /нет полей для/);
 });
 
-function snap(tree: CategoryNode[], fields: Record<string, NodeFields>): Snapshot {
-    return { tree, fields };
+function snap(
+    tree: CategoryNode[],
+    fields: Record<string, NodeFields>,
+    brands: Record<string, string[]> = {},
+): Snapshot {
+    return { tree, fields, brands };
 }
 
 function leafFields(category: string): NodeFields {
     return {
         node: { name: 'leaf', slug: 'leaf' },
-        fields: [{ tag: 'Category', content: [{ values: [{ value: category }] }] }],
+        fields: [{ tag: 'Category', content: [{ required: true, values: [{ value: category }] }] }],
     };
 }
 
@@ -346,4 +615,43 @@ function trap(
         images: { source: [] },
         description: { html },
     };
+}
+
+function brandLeaf(catalog: string): NodeFields {
+    return {
+        node: { name: 'Звук', slug: 'zvuk' },
+        fields: [
+            {
+                tag: 'Category',
+                content: [{ required: true, values: [{ value: 'Музыкальные инструменты' }] }],
+            },
+            {
+                tag: 'Brand',
+                content: [{ field_type: 'select', is_catalog: true, required: true, catalog }],
+            },
+        ],
+    };
+}
+
+// Gemma-заглушка: на coarse берёт первый узел, на fine — первого кандидата.
+function pickFirst(): Gemma {
+    return {
+        askJson: async (prompt: string) =>
+            prompt.includes('КАНДИДАТЫ') ? { id: 1 } : { ids: [1] },
+    } as unknown as Gemma;
+}
+
+// Реальный снапшот нужен только trap-тестам и интеграции — грузим лениво, чтобы моковые тесты от него не зависели.
+let cached: Snapshot | null = null;
+function realSnapshot(): Snapshot {
+    cached ??= CategorySnapshot.loadFile(
+        new URL('../data/category-snapshot.json', import.meta.url).pathname,
+    );
+    return cached;
+}
+function brandsOf(slug: string): string[] {
+    const real = realSnapshot();
+    const catalog = real.fields[slug]?.fields.find((f) => f.tag === 'Brand')?.content?.[0]?.catalog;
+    assert.ok(catalog, `у листа ${slug} нет каталога Brand`);
+    return real.brands[catalog] ?? [];
 }

@@ -1,88 +1,31 @@
 import { z } from 'zod';
-import { env } from '../environment.ts';
-
-// Узел дерева категорий Avito. slug есть у каждого узла, но fields отдаёт только истинный лист (без nested).
-export type CategoryNode = {
-    name: string;
-    slug?: string | undefined;
-    nested?: CategoryNode[] | undefined;
-};
-
-export type FieldContent = {
-    field_type?: 'input' | 'select' | 'checkbox' | undefined;
-    is_catalog?: boolean | undefined;
-    values?: { value?: string | undefined }[] | undefined;
-    values_link_json?: string | null | undefined;
-};
-
-export type NodeFields = {
-    node: { name: string; slug: string };
-    fields: { tag?: string | undefined; content?: FieldContent[] | undefined }[];
-};
-
-// Листья поддерева: узлы без nested, у которых есть slug (истинные категории Avito).
-export function walkLeaves(nodes: CategoryNode[]): CategoryNode[] {
-    const out: CategoryNode[] = [];
-    const walk = (node: CategoryNode): void => {
-        if (!node.nested?.length) {
-            if (node.slug) {
-                out.push(node);
-            }
-            return;
-        }
-        for (const child of node.nested) {
-            walk(child);
-        }
-    };
-    for (const node of nodes) {
-        walk(node);
-    }
-    return out;
-}
-
-// Без .loose(): POST профиля принимает только эти поля, лишнее из GET не прокидываем.
-export const ProfileSchema = z.object({
-    autoload_enabled: z.boolean(),
-    report_email: z.string().nullable(),
-    schedule: z.array(
-        z.object({
-            rate: z.number(),
-            weekdays: z.array(z.number()),
-            time_slots: z.array(z.number()),
-        }),
-    ),
-    feeds_data: z.array(z.object({ feed_name: z.string(), feed_url: z.string() })).nullable(),
-});
-export const ReportStatusSchema = z.enum(['processing', 'success', 'success_warning', 'error']);
-export const ItemSchema = z.object({
-    ad_id: z.string(),
-    messages: z.array(z.object({ type: z.string(), title: z.string(), description: z.string() })),
-});
-type Section = { slug: string; count: number; sections?: Section[] | undefined };
-const SectionSchema: z.ZodType<Section> = z.lazy(() =>
-    z.object({ slug: z.string(), count: z.number(), sections: z.array(SectionSchema).optional() }),
-);
-
-export type AutoloadProfile = z.infer<typeof ProfileSchema>;
-export type AutoloadReport = { id: number; status: z.infer<typeof ReportStatusSchema> };
-// Счётчики дерева section_stats по slug: sections_stats (всего), successful, error, not_publish…
-export type ReportStats = Record<string, number>;
-export type AutoloadItem = z.infer<typeof ItemSchema>;
+import { env } from '../../environment.ts';
+import { AvitoApiError } from './AvitoApiError.ts';
+import {
+    type AutoloadItem,
+    type AutoloadProfile,
+    type AutoloadReport,
+    type CategoryNode,
+    CategoryNodeSchema,
+    fieldValues,
+    ItemSchema,
+    type NodeFields,
+    ProfileSchema,
+    type ReportStats,
+    ReportStatusSchema,
+    type Section,
+    SectionSchema,
+} from './Schemas.ts';
 
 export class AvitoApi {
     private static readonly BASE = 'https://api.avito.ru';
+    // Зеркало каталогов значений (бренды): values_link_xml ведёт на avito.ru под антибот (429), тот же файл здесь отдаётся свободно.
+    private static readonly CATALOG_MIRROR = 'https://autoload.avito.ru/format/';
     private static readonly TOKEN_TTL_MS = 23 * 60 * 60 * 1000;
     private static readonly ERRORS_PAGE = 100;
 
-    private static readonly CategoryNodeSchema: z.ZodType<CategoryNode> = z.lazy(() =>
-        z.object({
-            name: z.string(),
-            slug: z.string().optional(),
-            nested: z.array(AvitoApi.CategoryNodeSchema).optional(),
-        }),
-    );
     private static readonly TreeOut = z.object({
-        categories: z.array(AvitoApi.CategoryNodeSchema),
+        categories: z.array(CategoryNodeSchema),
     });
     private static readonly FieldValue = z.object({ value: z.string().optional() }).loose();
     private static readonly FieldContentSchema = z
@@ -91,6 +34,8 @@ export class AvitoApi {
             is_catalog: z.boolean().optional(),
             values: z.array(AvitoApi.FieldValue).optional(),
             values_link_json: z.string().nullish(),
+            values_link_xml: z.string().nullish(),
+            required: z.boolean().optional(),
         })
         .loose();
     private static readonly NodeFieldSchema = z
@@ -163,7 +108,10 @@ export class AvitoApi {
 
     private static async check(res: Response, op: string): Promise<Response> {
         if (!res.ok) {
-            throw new Error(`[AvitoApi] ${op} ${res.status}: ${await res.text()}`);
+            throw new AvitoApiError(
+                res.status,
+                `[AvitoApi] ${op} ${res.status}: ${await res.text()}`,
+            );
         }
         return res;
     }
@@ -241,6 +189,57 @@ export class AvitoApi {
         const path = url.replace(AvitoApi.BASE, '');
         const res = await AvitoApi.check(await this.get(path), `values(${path})`);
         const parsed = z.object({ values: z.array(AvitoApi.FieldValue) }).parse(await res.json());
-        return parsed.values.map((v) => v.value).filter((v): v is string => Boolean(v));
+        return fieldValues(parsed);
+    }
+
+    // Имя файла каталога из values_link_xml — ключ справочника брендов в снапшоте (name_in_catalog не уникален).
+    static catalogName(valuesLinkXml: string): string {
+        const file = valuesLinkXml.split('/').pop() ?? '';
+        if (!file.endsWith('.xml')) {
+            throw new Error(`[AvitoApi] неожиданная ссылка каталога: ${valuesLinkXml}`);
+        }
+        return file.slice(0, -'.xml'.length);
+    }
+
+    // Значения верхнего уровня каталога (бренды). Вложенные seriya/model не берём — это другие поля.
+    async catalogValues(catalog: string): Promise<string[]> {
+        const url = `${AvitoApi.CATALOG_MIRROR}${catalog}.xml`;
+        const res = await AvitoApi.check(await fetch(url), `catalog(${catalog})`);
+        return AvitoApi.topLevelNames(await res.text());
+    }
+
+    private static topLevelNames(xml: string): string[] {
+        const names: string[] = [];
+        let depth = 0;
+        for (const m of xml.matchAll(/<(\/?)([A-Za-z_][\w.-]*)([^>]*?)(\/?)>/g)) {
+            const [, close, , attrs, selfClose] = m;
+            if (close) {
+                depth--;
+                continue;
+            }
+            if (depth === 1) {
+                const name = /\bname=(["'])(.*?)\1/.exec(attrs ?? '')?.[2];
+                if (name) {
+                    names.push(AvitoApi.decodeEntities(name));
+                }
+            }
+            if (!selfClose) {
+                depth++;
+            }
+        }
+        return names;
+    }
+
+    private static decodeEntities(s: string): string {
+        return s
+            .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) =>
+                String.fromCodePoint(Number.parseInt(hex, 16)),
+            )
+            .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(Number(dec)))
+            .replace(/&quot;/g, '"')
+            .replace(/&apos;/g, "'")
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&amp;/g, '&');
     }
 }

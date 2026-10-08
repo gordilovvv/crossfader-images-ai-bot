@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Listing } from '../src/Bot.ts';
 import { Messages } from '../src/TelegramGateway/Messages.ts';
-import {
-    type AutoloadItem,
-    type AutoloadProfile,
-    type AutoloadReport,
-    AvitoApi,
-    type ReportStats,
-} from '../src/XMLFeedAvito/AvitoApi.ts';
 import { AvitoUploader } from '../src/XMLFeedAvito/AvitoUploader.ts';
+import { AvitoApi } from '../src/XMLFeedAvito/api/AvitoApi.ts';
+import type {
+    AutoloadItem,
+    AutoloadProfile,
+    AutoloadReport,
+    ReportStats,
+} from '../src/XMLFeedAvito/api/Schemas.ts';
 import { S3 } from '../src/XMLFeedAvito/S3.ts';
 import { XMLBuilder } from '../src/XMLFeedAvito/XMLBuilder.ts';
 import { measure } from './helpers/e2e.ts';

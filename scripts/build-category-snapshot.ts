@@ -1,4 +1,4 @@
-import { AvitoApi } from '../src/XMLFeedAvito/AvitoApi.ts';
+import { AvitoApi } from '../src/XMLFeedAvito/api/AvitoApi.ts';
 import { CategorySnapshot } from '../src/XMLFeedAvito/CategorySnapshot.ts';
 
 // Разовый rebuild справочника категорий Avito → data/category-snapshot.json.
